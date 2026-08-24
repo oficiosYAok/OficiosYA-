@@ -2919,3 +2919,23 @@ img {
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
 }
+
+
+#login.section {
+  position: relative;
+  z-index: 5;
+  padding-bottom: 6rem;
+}
+
+#login .login-card {
+  position: relative;
+  z-index: 6;
+}
+
+#btnLoginSubmit {
+  position: relative;
+  z-index: 7;
+  pointer-events: auto;
+  width: 100%;
+  min-height: 48px;
+}
