@@ -1,3 +1,4 @@
+
 // ===== DATA & STORAGE (Firebase) =====
 // currentUser se mantiene en memoria + sessionStorage para la UI
 let currentUserCache = null;
@@ -178,6 +179,86 @@ const PROVINCIAS_LOCALIDADES = {
 
 // Lista ordenada de provincias para los selects
 const LISTA_PROVINCIAS = Object.keys(PROVINCIAS_LOCALIDADES).sort((a, b) => a.localeCompare(b, 'es'));
+
+// ===== ETIQUETAS POR OFICIO =====
+const ETIQUETAS_POR_OFICIO = {
+  'Plomería': [
+    'Destapes', 'Pérdidas de agua', 'Instalación de canillas', 'Inodoros y depósitos',
+    'Termotanque', 'Cañerías', 'Cloacas', 'Urgencias 24hs'
+  ],
+  'Gasista': [
+    'Instalación de gas', 'Matriculado', 'Termotanque', 'Calefactores',
+    'Cocinas', 'Estufas', 'Habilitación / certificado', 'Reparaciones'
+  ],
+  'Electricista': [
+    'Instalación eléctrica', 'Tableros', 'Tomas y luces', 'Electrodomésticos',
+    'LED e iluminación', 'Porteros / alarmas', 'Domótica', 'Urgencias'
+  ],
+  'Pintor': [
+    'Interior', 'Exterior / frentes', 'Revoque fino', 'Enduido',
+    'Esmalte', 'Impermeabilización', 'Cielorrasos', 'Decorativa'
+  ],
+  'Albañil': [
+    'Refacciones', 'Ampliaciones', 'Revoques', 'Colocación de pisos',
+    'Azulejos', 'Muros', 'Contrapisos', 'Obras nuevas'
+  ],
+  'Carpintero': [
+    'Muebles a medida', 'Puertas', 'Aberturas', 'Placards',
+    'Deck / pergolas', 'Restauración', 'Melamina', 'Madera maciza'
+  ],
+  'Jardinero': [
+    'Corte de césped', 'Poda', 'Limpieza de pileta', 'Diseño de jardín',
+    'Riego', 'Desmalezado', 'Plantación', 'Mantenimiento'
+  ],
+  'Cerrajero': [
+    'Apertura de puertas', 'Cambio de cerraduras', 'Copias de llaves',
+    'Cerraduras de seguridad', 'Automóviles', 'Urgencias 24hs', 'Blindaje'
+  ]
+};
+
+function etiquetasDeOficio(oficio) {
+  return ETIQUETAS_POR_OFICIO[oficio] || [];
+}
+
+function renderEtiquetasSelector(oficioSelectId, containerId, seleccionadas) {
+  const sel = document.getElementById(oficioSelectId);
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  const oficio = sel ? sel.value : '';
+  const lista = etiquetasDeOficio(oficio);
+  const chosen = new Set(seleccionadas || []);
+
+  if (!oficio || lista.length === 0) {
+    box.innerHTML = '<p class="tags-placeholder">Primero seleccioná un oficio</p>';
+    return;
+  }
+
+  box.innerHTML = lista.map((tag, i) => {
+    const id = containerId + '_tag_' + i;
+    const checked = chosen.has(tag) ? 'checked' : '';
+    return `<label class="tag-chip" for="${id}">
+      <input type="checkbox" id="${id}" value="${tag.replace(/"/g, '&quot;')}" ${checked}>
+      <span>${tag}</span>
+    </label>`;
+  }).join('');
+}
+
+function obtenerEtiquetasSeleccionadas(containerId) {
+  const box = document.getElementById(containerId);
+  if (!box) return [];
+  return Array.from(box.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+}
+
+function renderEtiquetasDisplay(etiquetas) {
+  const list = Array.isArray(etiquetas) ? etiquetas.filter(Boolean) : [];
+  if (list.length === 0) return '';
+  return `<div class="tags-display">${list.map(t => `<span class="tag-pill">${t}</span>`).join('')}</div>`;
+}
+
+window.renderEtiquetasSelector = renderEtiquetasSelector;
+window.ETIQUETAS_POR_OFICIO = ETIQUETAS_POR_OFICIO;
+
+
 
 // Datos de ejemplo de profesionales
 const DEMO_PROFESIONALES = [
@@ -1160,6 +1241,7 @@ async function registrarOficio(e) {
       localidad: document.getElementById('oficioLocalidad').value,
       provincia: document.getElementById('oficioProvincia').value,
       descripcion: (document.getElementById('oficioDescripcion').value || '').trim(),
+      etiquetas: obtenerEtiquetasSeleccionadas('oficioEtiquetasBox'),
       fotoPerfil: '',
       fotos: [],
       createdAt: new Date().toISOString()
@@ -1532,6 +1614,7 @@ async function realizarBusqueda() {
               <span style="color:var(--text-light);font-size:0.9rem;">(${avg.count} reseñas)</span>
             </div>
             <p style="font-size:0.9rem;color:var(--text-light);">${p.descripcion ? p.descripcion.substring(0, 100) + (p.descripcion.length > 100 ? '...' : '') : 'Sin descripción'}</p>
+            ${renderEtiquetasDisplay(p.etiquetas)}
           </div>
           <div class="prof-actions">
             <button class="btn btn-primary btn-sm" onclick="verPerfil('${p.id}')">
@@ -1746,6 +1829,7 @@ async function verPerfil(profId) {
             <div class="prof-info-row"><span class="k"><i class="fas fa-phone"></i> Teléfono</span><span class="v">${prof.telefono || '—'}</span></div>
             <div class="prof-info-row"><span class="k"><i class="fas fa-birthday-cake"></i> Edad</span><span class="v">${(() => { const e = edadDesdePerfil(prof); return e !== null ? e + ' años' : '—'; })()}</span></div>
           </div>
+          ${(prof.etiquetas && prof.etiquetas.length) ? `<div style="margin-top:1.1rem;"><h3><i class="fas fa-tags"></i> Especialidades</h3>${renderEtiquetasDisplay(prof.etiquetas)}</div>` : ''}
           ${prof.descripcion ? `<div style="margin-top:1.2rem;"><h3><i class="fas fa-quote-left"></i> Sobre el profesional</h3><p class="prof-about">${prof.descripcion}</p></div>` : ''}
         </div>
         <div class="prof-card-block">
@@ -1942,11 +2026,15 @@ async function showMyProfile(editMode) {
         <div class="form-row">
           <div class="form-group">
             <label>Oficio</label>
-            <select id="editOficio" required>
+            <select id="editOficio" required onchange="renderEtiquetasSelector('editOficio','editEtiquetasBox', obtenerEtiquetasSeleccionadas('editEtiquetasBox'))">
               ${['Plomería','Gasista','Electricista','Pintor','Albañil','Carpintero','Jardinero','Cerrajero'].map(o => 
                 `<option value="${o}" ${o === prof.oficio ? 'selected' : ''}>${o}</option>`
               ).join('')}
             </select>
+          </div>
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Especialidades / etiquetas</label>
+            <div id="editEtiquetasBox" class="tags-select-box"></div>
           </div>
           <div class="form-group">
             <label>Años de experiencia</label>
@@ -1997,6 +2085,7 @@ async function showMyProfile(editMode) {
         <div class="prof-info-row"><span class="k">Provincia</span><span class="v">${prof.provincia || '—'}</span></div>
         <div class="prof-info-row"><span class="k">Edad</span><span class="v">${(() => { const e = edadDesdePerfil(prof); return e !== null ? e + ' años' : '—'; })()}</span></div>
       </div>
+      ${(prof.etiquetas && prof.etiquetas.length) ? `<div style="margin-top:1rem;"><strong style="font-size:0.9rem;">Especialidades</strong>${renderEtiquetasDisplay(prof.etiquetas)}</div>` : ''}
       ${prof.descripcion ? `<p class="prof-about" style="margin-top:1rem;">${prof.descripcion}</p>` : ''}
       <button type="button" class="btn btn-primary" style="margin-top:1.2rem;" onclick="showMyProfile(true)">
         <i class="fas fa-user-edit"></i> Editar perfil
@@ -2020,6 +2109,7 @@ async function showMyProfile(editMode) {
   if (isEdit) {
     setMaxFechaNacimiento();
     cargarLocalidades('editProvincia', 'editLocalidad', prof.localidad);
+    renderEtiquetasSelector('editOficio', 'editEtiquetasBox', prof.etiquetas || []);
     const block = document.getElementById('editProfileBlock');
     if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -2060,6 +2150,7 @@ async function actualizarPerfil(e) {
       dni: dni,
       telefono: document.getElementById('editTelefono').value.trim(),
       oficio: document.getElementById('editOficio').value,
+      etiquetas: obtenerEtiquetasSeleccionadas('editEtiquetasBox'),
       experiencia: parseInt(document.getElementById('editExperiencia').value),
       fechaNacimiento: document.getElementById('editFechaNacimiento').value,
       edad: calcularEdad(document.getElementById('editFechaNacimiento').value),
