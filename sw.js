@@ -1,5 +1,5 @@
 /* Service Worker — Oficios YA! PWA */
-const CACHE_NAME = 'oficiosya-v10';
+const CACHE_NAME = 'oficiosya-v11';
 const PRECACHE = [
   './',
   './index.html',
