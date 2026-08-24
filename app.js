@@ -1,4 +1,3 @@
-
 // ===== DATA & STORAGE (Firebase) =====
 // currentUser se mantiene en memoria + sessionStorage para la UI
 let currentUserCache = null;
@@ -1437,39 +1436,52 @@ async function procesarLinkVerificacionEmail() {
 
 // ===== LOGIN / LOGOUT =====
 async function iniciarSesion(e) {
-  e.preventDefault();
-  try {
-    requireFirebase();
-  } catch (err) {
-    return;
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
   }
 
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-  const pass = document.getElementById('loginPass').value;
+  if (typeof firebaseReady === 'undefined' || !firebaseReady) {
+    showToast('Firebase no está configurado. Revisá firebase-config.js', 'error');
+    console.error('Login bloqueado: Firebase no listo');
+    return false;
+  }
+
+  const emailEl = document.getElementById('loginEmail');
+  const passEl = document.getElementById('loginPass');
+  if (!emailEl || !passEl) {
+    showToast('No se encontró el formulario de login', 'error');
+    return false;
+  }
+
+  const email = emailEl.value.trim().toLowerCase();
+  const pass = passEl.value;
   const remember = document.getElementById('loginRemember')?.checked;
+
+  if (!email || !pass) {
+    showToast('Completá email y contraseña', 'error');
+    return false;
+  }
 
   try {
     showToast('Ingresando...');
     const cred = await auth.signInWithEmailAndPassword(email, pass);
 
-    // Solo bloquea si NUNCA verificó el mail del registro.
-    // Cuando ya lo verificó, emailVerified es true y entra normal (sin volver a verificar).
     await cred.user.reload();
     if (!cred.user.emailVerified) {
-      // Mantener sesión y mostrar pantalla de espera (auto-ingreso al verificar)
       currentUserCache = null;
       updateNav();
       mostrarPantallaVerificacion(email);
       showToast('Todavía falta verificar tu email. Revisá tu correo.');
-      return;
+      return false;
     }
-    detenerPollVerificacion();
+    if (typeof detenerPollVerificacion === 'function') detenerPollVerificacion();
 
     const profile = await loadUserProfileWithRetry(cred.user.uid);
     if (!profile) {
-      showToast('No se encontró el perfil de usuario', 'error');
+      showToast('No se encontró el perfil de usuario en la base de datos', 'error');
       await auth.signOut();
-      return;
+      return false;
     }
     currentUserCache = { id: cred.user.uid, ...profile, email: cred.user.email };
     if (remember) {
@@ -1478,17 +1490,29 @@ async function iniciarSesion(e) {
       localStorage.removeItem('oficiosya_remember');
     }
     updateNav();
-    showToast(`¡Bienvenido/a, ${(currentUserCache.nombre || '').split(' ')[0]}!`);
+    showToast('¡Bienvenido/a, ' + ((currentUserCache.nombre || '').split(' ')[0] || '') + '!');
     if (currentUserCache.tipo === 'oficio') {
       showMyProfile(false);
     } else {
       showSection('search');
     }
   } catch (err) {
-    console.error(err);
-    showToast('Email o contraseña incorrectos', 'error');
+    console.error('Error login:', err);
+    const code = err && err.code ? err.code : '';
+    if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/invalid-email') {
+      showToast('Email o contraseña incorrectos', 'error');
+    } else if (code === 'auth/too-many-requests') {
+      showToast('Demasiados intentos. Esperá unos minutos.', 'error');
+    } else if (code === 'auth/network-request-failed') {
+      showToast('Sin conexión. Revisá tu internet.', 'error');
+    } else {
+      showToast((err && err.message) ? err.message : 'No se pudo iniciar sesión', 'error');
+    }
   }
+  return false;
 }
+
+window.iniciarSesion = iniciarSesion;
 
 async function reenviarVerificacionEmail() {
   try {
