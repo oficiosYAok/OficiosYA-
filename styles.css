@@ -1,3 +1,4 @@
+
 /* ===== VARIABLES & RESET ===== */
 :root {
   --primary: #e85d04;
@@ -2854,4 +2855,67 @@ img {
 .prof-actions .btn-sm.btn-share {
   min-width: 40px;
   padding: 0.45rem 0.65rem;
+}
+
+/* ===== ETIQUETAS / ESPECIALIDADES ===== */
+.tags-select-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  border: 1px solid #eee;
+  min-height: 48px;
+}
+
+.tags-placeholder {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-light);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  user-select: none;
+  background: white;
+  border: 1px solid #e0d5cc;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--secondary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tag-chip input {
+  display: none;
+}
+
+.tag-chip:has(input:checked),
+.tag-chip.selected {
+  background: linear-gradient(135deg, #fff5eb, #ffe8d6);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.tags-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.tag-pill {
+  display: inline-block;
+  background: #fff5eb;
+  color: #9d0208;
+  border: 1px solid #ffd6a8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
 }
