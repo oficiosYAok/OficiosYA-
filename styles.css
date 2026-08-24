@@ -2968,3 +2968,19 @@ img {
     position: relative;
   }
 }
+
+
+.prof-hero-tags {
+  margin: 0.65rem 0 0.35rem;
+}
+
+.prof-hero-tags .tags-display {
+  margin-top: 0;
+}
+
+.prof-hero-tags .tag-pill {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: 0.78rem;
+}
