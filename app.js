@@ -1,3 +1,4 @@
+
 // ===== DATA & STORAGE (Firebase) =====
 // currentUser se mantiene en memoria + sessionStorage para la UI
 let currentUserCache = null;
@@ -829,6 +830,25 @@ function showSection(sectionId, fromHistory) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+
+/** Navegación segura desde menú / botones (móvil y desktop) */
+function irASeccion(e, sectionId) {
+  if (e) {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+    } catch (err) { /* ignore */ }
+  }
+  if (typeof closeMobileNav === 'function') closeMobileNav();
+  if (typeof closeUserMenu === 'function') closeUserMenu();
+  showSection(sectionId);
+  return false;
+}
+
+window.irASeccion = irASeccion;
+window.showSection = showSection;
+window.toggleMenu = toggleMenu;
+
 // Botón atrás / adelante del navegador o del sistema (PWA)
 window.addEventListener('popstate', (e) => {
   if (!e.state) {
@@ -959,8 +979,8 @@ function updateNav() {
       if (menuNotifs) menuNotifs.style.display = 'none';
     }
   } else {
-    if (navRegister) navRegister.style.display = 'block';
-    if (navLogin) navLogin.style.display = 'block';
+    if (navRegister) navRegister.style.display = '';
+    if (navLogin) navLogin.style.display = '';
     const btnHeroRegisterOut = document.getElementById('btnHeroRegister');
     if (btnHeroRegisterOut) btnHeroRegisterOut.style.display = '';
     const btnQuickRegisterOut = document.getElementById('btnQuickRegister');
