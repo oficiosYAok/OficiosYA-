@@ -706,17 +706,28 @@ async function getReviewsByProf(profId) {
 
 async function getNotifications(userId) {
   requireFirebase();
+  // Siempre filtrar por el uid real de Auth (las reglas de Firestore lo exigen)
+  const uid = (auth.currentUser && auth.currentUser.uid) || userId;
+  if (!uid) {
+    throw new Error('No hay sesión activa para cargar notificaciones');
+  }
+  if (!auth.currentUser) {
+    throw new Error('Sesión de Firebase no lista. Cerrá sesión y volvé a ingresar.');
+  }
+
   let snap;
   try {
     snap = await db.collection('notifications')
-      .where('userId', '==', userId)
+      .where('userId', '==', uid)
       .orderBy('fecha', 'desc')
       .limit(50)
       .get();
   } catch (err) {
-    console.warn('Notificaciones con orderBy falló (¿falta índice?). Reintento simple:', err && err.message);
+    console.warn('Notificaciones orderBy falló, reintento sin orden:', err && err.code, err && err.message);
+    // Si el error es de permisos, no enmascarar
+    if (err && err.code === 'permission-denied') throw err;
     snap = await db.collection('notifications')
-      .where('userId', '==', userId)
+      .where('userId', '==', uid)
       .limit(50)
       .get();
   }
@@ -738,14 +749,16 @@ async function saveNotification(userId, notif) {
 async function markNotificationsRead(userId) {
   requireFirebase();
   try {
+    const uid = (auth.currentUser && auth.currentUser.uid) || userId;
+    if (!uid || !auth.currentUser) return;
     let snap;
     try {
       snap = await db.collection('notifications')
-        .where('userId', '==', userId)
+        .where('userId', '==', uid)
         .where('read', '==', false)
         .get();
     } catch (e) {
-      snap = await db.collection('notifications').where('userId', '==', userId).get();
+      snap = await db.collection('notifications').where('userId', '==', uid).get();
     }
     if (!snap.docs.length) return;
     // Firestore batch máx. 500
