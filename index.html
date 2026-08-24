@@ -564,14 +564,14 @@
     <div class="container">
       <div class="login-card">
         <h2><i class="fas fa-sign-in-alt"></i> Iniciar Sesión</h2>
-        <form onsubmit="iniciarSesion(event)">
+        <form id="loginForm" onsubmit="return iniciarSesion(event);">
           <div class="form-group">
             <label>Email</label>
-            <input type="email" id="loginEmail" required placeholder="tu@email.com">
+            <input type="email" id="loginEmail" required placeholder="tu@email.com" autocomplete="email">
           </div>
           <div class="form-group">
             <label>Contraseña</label>
-            <input type="password" id="loginPass" required placeholder="Tu contraseña">
+            <input type="password" id="loginPass" required placeholder="Tu contraseña" autocomplete="current-password">
           </div>
           <div class="form-group remember-row">
             <label class="remember-label">
@@ -579,7 +579,7 @@
               <span>Recordar contraseña</span>
             </label>
           </div>
-          <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+          <button type="submit" class="btn btn-primary btn-block" id="btnLoginSubmit">Ingresar</button>
         </form>
         <p class="login-footer" style="margin-top:0.85rem;">
           ¿No verificaste tu email?
