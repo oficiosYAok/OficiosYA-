@@ -2939,3 +2939,32 @@ img {
   width: 100%;
   min-height: 48px;
 }
+
+
+/* Menú superior: links siempre clickeables */
+.nav-links a,
+.nav-links button {
+  pointer-events: auto !important;
+  cursor: pointer;
+  position: relative;
+  z-index: 5;
+}
+
+@media (max-width: 768px) {
+  .nav-links.open {
+    display: flex !important;
+    z-index: 3000;
+  }
+
+  .nav-links.open a {
+    display: block;
+    width: 100%;
+    padding: 0.9rem 1rem;
+    min-height: 44px;
+  }
+
+  .navbar {
+    z-index: 3001;
+    position: relative;
+  }
+}
