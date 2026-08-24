@@ -706,18 +706,22 @@ async function getReviewsByProf(profId) {
 
 async function getNotifications(userId) {
   requireFirebase();
-  const snap = await db.collection('notifications')
-    .where('userId', '==', userId)
-    .orderBy('fecha', 'desc')
-    .limit(50)
-    .get()
-    .catch(async () => {
-      // Si falta índice compuesto, traer sin orderBy
-      const s = await db.collection('notifications').where('userId', '==', userId).get();
-      return s;
-    });
+  let snap;
+  try {
+    snap = await db.collection('notifications')
+      .where('userId', '==', userId)
+      .orderBy('fecha', 'desc')
+      .limit(50)
+      .get();
+  } catch (err) {
+    console.warn('Notificaciones con orderBy falló (¿falta índice?). Reintento simple:', err && err.message);
+    snap = await db.collection('notifications')
+      .where('userId', '==', userId)
+      .limit(50)
+      .get();
+  }
   const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  list.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  list.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
   return list;
 }
 
@@ -733,24 +737,45 @@ async function saveNotification(userId, notif) {
 
 async function markNotificationsRead(userId) {
   requireFirebase();
-  const snap = await db.collection('notifications')
-    .where('userId', '==', userId)
-    .where('read', '==', false)
-    .get()
-    .catch(async () => db.collection('notifications').where('userId', '==', userId).get());
-  const batch = db.batch();
-  snap.docs.forEach(d => {
-    if (d.data().read === false || d.data().read === undefined) {
-      batch.update(d.ref, { read: true });
+  try {
+    let snap;
+    try {
+      snap = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('read', '==', false)
+        .get();
+    } catch (e) {
+      snap = await db.collection('notifications').where('userId', '==', userId).get();
     }
-  });
-  await batch.commit();
+    if (!snap.docs.length) return;
+    // Firestore batch máx. 500
+    const docs = snap.docs.filter(d => d.data().read === false || d.data().read === undefined);
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = db.batch();
+      docs.slice(i, i + 400).forEach(d => batch.update(d.ref, { read: true }));
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('No se pudieron marcar notificaciones como leídas:', err);
+  }
 }
 
 async function getQuotes() {
   requireFirebase();
   const snap = await db.collection('quotes').get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Solo presupuestos del profesional logueado (cumple reglas de Firestore) */
+async function getQuotesForProf(profId) {
+  requireFirebase();
+  try {
+    const snap = await db.collection('quotes').where('profId', '==', profId).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn('No se pudieron cargar presupuestos:', err);
+    return [];
+  }
 }
 
 async function uploadImage(path, dataUrl) {
@@ -2458,7 +2483,8 @@ async function showNotifications() {
       return;
     }
 
-    const quotes = await getQuotes();
+    // Solo quotes del profesional (las reglas no permiten leer todos)
+    const quotes = await getQuotesForProf(user.id);
     container.innerHTML = notifs.map(n => {
       const icon = n.tipo === 'presupuesto' ? 'fa-file-invoice-dollar' : 'fa-star';
       let extra = '';
@@ -2487,8 +2513,11 @@ async function showNotifications() {
       `;
     }).join('');
   } catch (err) {
-    console.error(err);
-    container.innerHTML = '<p style="text-align:center;color:var(--text-light);">Error al cargar notificaciones.</p>';
+    console.error('Error notificaciones:', err);
+    const msg = (err && err.message) ? err.message : 'Error desconocido';
+    container.innerHTML = `<p style="text-align:center;color:var(--text-light);">Error al cargar notificaciones.</p>
+      <p style="text-align:center;font-size:0.8rem;color:#c1121f;max-width:420px;margin:0.5rem auto;">${msg}</p>`;
+    showToast('No se pudieron cargar las notificaciones', 'error');
   }
 }
 
