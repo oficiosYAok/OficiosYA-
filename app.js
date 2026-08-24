@@ -1848,6 +1848,7 @@ async function verPerfil(profId) {
               <span class="prof-chip accent"><i class="fas fa-briefcase"></i> ${prof.oficio || 'Profesional'}</span>
               <span class="prof-chip"><i class="fas fa-star"></i> ${avg.promedio > 0 ? avg.promedio + ' / 5' : 'Sin valoraciones'}</span>
             </div>
+            ${(prof.etiquetas && prof.etiquetas.length) ? `<div class="prof-hero-tags">${renderEtiquetasDisplay(prof.etiquetas)}</div>` : ''}
             <div class="prof-hero-meta">
               <span><i class="fas fa-map-marker-alt"></i> ${prof.localidad || ''}, ${prof.provincia || ''}</span>
               <span><i class="fas fa-clock"></i> ${prof.experiencia || 0} años de experiencia</span>
@@ -1873,7 +1874,6 @@ async function verPerfil(profId) {
             <div class="prof-info-row"><span class="k"><i class="fas fa-phone"></i> Teléfono</span><span class="v">${prof.telefono || '—'}</span></div>
             <div class="prof-info-row"><span class="k"><i class="fas fa-birthday-cake"></i> Edad</span><span class="v">${(() => { const e = edadDesdePerfil(prof); return e !== null ? e + ' años' : '—'; })()}</span></div>
           </div>
-          ${(prof.etiquetas && prof.etiquetas.length) ? `<div style="margin-top:1.1rem;"><h3><i class="fas fa-tags"></i> Especialidades</h3>${renderEtiquetasDisplay(prof.etiquetas)}</div>` : ''}
           ${prof.descripcion ? `<div style="margin-top:1.2rem;"><h3><i class="fas fa-quote-left"></i> Sobre el profesional</h3><p class="prof-about">${prof.descripcion}</p></div>` : ''}
         </div>
         <div class="prof-card-block">
