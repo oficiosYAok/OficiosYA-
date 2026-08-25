@@ -1,10 +1,6 @@
-/**
+**
  * Cloud Functions — Oficios YA!
  * Notificaciones in-app + Push (FCM)
- *
- * Deploy:
- *   cd functions && npm install
- *   firebase deploy --only functions
  */
 
 const functions = require("firebase-functions");
@@ -16,41 +12,65 @@ const db = admin.firestore();
 async function enviarPushAlUsuario(userId, title, body, data) {
   try {
     const userDoc = await db.collection("users").doc(userId).get();
-    if (!userDoc.exists) return;
-    const tokens = userDoc.data().fcmTokens || [];
+    if (!userDoc.exists) {
+      console.log("Usuario no existe", userId);
+      return { ok: false, reason: "no-user" };
+    }
+    const tokens = (userDoc.data().fcmTokens || []).filter(Boolean);
     if (!tokens.length) {
       console.log("Sin tokens FCM para", userId);
-      return;
+      return { ok: false, reason: "no-tokens" };
     }
+
+    const dataPayload = {};
+    const src = Object.assign(
+      {
+        title: String(title || "Oficios YA!"),
+        body: String(body || ""),
+        url: "/#notifications",
+        click_action: "/#notifications",
+      },
+      data || {}
+    );
+    // FCM data values must be strings
+    Object.keys(src).forEach((k) => {
+      dataPayload[k] = String(src[k] == null ? "" : src[k]);
+    });
 
     const message = {
       tokens: tokens,
-      notification: { title, body },
-      data: Object.assign(
-        {
-          title: String(title || ""),
-          body: String(body || ""),
-          url: "/#notifications",
-        },
-        data || {}
-      ),
+      notification: {
+        title: String(title || "Oficios YA!"),
+        body: String(body || ""),
+      },
+      data: dataPayload,
       webpush: {
-        fcmOptions: {
-          link: "/#notifications",
+        headers: {
+          Urgency: "high",
         },
         notification: {
+          title: String(title || "Oficios YA!"),
+          body: String(body || ""),
           icon: "/icon-192.png",
           badge: "/icon-192.png",
+          requireInteraction: true,
+        },
+        fcmOptions: {
+          link: "/#notifications",
         },
       },
     };
 
     const res = await admin.messaging().sendEachForMulticast(message);
     console.log(
-      `Push enviados: ${res.successCount} ok, ${res.failureCount} fail`
+      `Push user=${userId} success=${res.successCount} fail=${res.failureCount}`
     );
+    res.responses.forEach((r, i) => {
+      if (!r.success) {
+        console.error("Token fail", tokens[i], r.error && r.error.code, r.error && r.error.message);
+      }
+    });
 
-    // Limpiar tokens inválidos
     const invalid = [];
     res.responses.forEach((r, i) => {
       if (!r.success) {
@@ -71,8 +91,15 @@ async function enviarPushAlUsuario(userId, title, body, data) {
           fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalid),
         });
     }
+
+    return {
+      ok: res.successCount > 0,
+      successCount: res.successCount,
+      failureCount: res.failureCount,
+    };
   } catch (err) {
     console.error("enviarPushAlUsuario", err);
+    return { ok: false, reason: String(err && err.message) };
   }
 }
 
@@ -80,21 +107,11 @@ exports.onReviewCreated = functions.firestore
   .document("reviews/{reviewId}")
   .onCreate(async (snap, context) => {
     const data = snap.data();
-    if (!data || !data.profId) {
-      console.warn("Reseña sin profId, se omite notificación");
-      return null;
-    }
+    if (!data || !data.profId) return null;
 
-    const calidad = data.calidad || 0;
-    const tiempo = data.tiempo || 0;
-    const precio = data.precio || 0;
-    const comentario = data.comentario || "";
     const nombre = data.clienteNombre || "Un cliente";
-
     const mensaje = `${nombre} te dejó una reseña y valoración.`;
-    const detalle = `"${comentario.substring(0, 60)}${
-      comentario.length > 60 ? "..." : ""
-    }" — Calidad: ${calidad}★, Tiempo: ${tiempo}★, Precio: ${precio}★`;
+    const detalle = `Calidad: ${data.calidad || 0}★ · Tiempo: ${data.tiempo || 0}★ · Precio: ${data.precio || 0}★`;
 
     await db.collection("notifications").add({
       userId: data.profId,
@@ -107,13 +124,10 @@ exports.onReviewCreated = functions.firestore
       source: "cloud-function",
     });
 
-    await enviarPushAlUsuario(
-      data.profId,
-      "Nueva reseña — Oficios YA!",
-      mensaje,
-      { tipo: "resena", tag: "resena" }
-    );
-
+    await enviarPushAlUsuario(data.profId, "Nueva reseña — Oficios YA!", mensaje, {
+      tipo: "resena",
+      tag: "resena",
+    });
     return null;
   });
 
@@ -121,19 +135,12 @@ exports.onQuoteCreated = functions.firestore
   .document("quotes/{quoteId}")
   .onCreate(async (snap, context) => {
     const data = snap.data();
-    if (!data || !data.profId) {
-      console.warn("Presupuesto sin profId, se omite notificación");
-      return null;
-    }
+    if (!data || !data.profId) return null;
 
     const nombre = data.clienteNombre || "Un cliente";
     const urgencia = data.urgencia || "Normal";
-    const descripcion = data.descripcion || "";
-
     const mensaje = `${nombre} te solicitó un presupuesto (${urgencia}).`;
-    const detalle =
-      descripcion.substring(0, 120) +
-      (descripcion.length > 120 ? "..." : "");
+    const detalle = (data.descripcion || "").substring(0, 120);
 
     await db.collection("notifications").add({
       userId: data.profId,
@@ -152,6 +159,28 @@ exports.onQuoteCreated = functions.firestore
       mensaje,
       { tipo: "presupuesto", tag: "presupuesto" }
     );
-
     return null;
   });
+
+/** Prueba de push: el profesional logueado se envía un aviso a sí mismo */
+exports.testPush = functions.https.onCall(async (data, context) => {
+  if (!context.auth || !context.auth.uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Debés iniciar sesión");
+  }
+  const uid = context.auth.uid;
+  const result = await enviarPushAlUsuario(
+    uid,
+    "Prueba — Oficios YA!",
+    "Si ves este aviso, las notificaciones push están funcionando.",
+    { tipo: "test", tag: "test" }
+  );
+  if (!result.ok) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      result.reason === "no-tokens"
+        ? "No hay tokens FCM en tu usuario. Activá push en la app primero."
+        : "No se pudo enviar: " + (result.reason || "error")
+    );
+  }
+  return result;
+});
