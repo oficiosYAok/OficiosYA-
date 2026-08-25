@@ -530,6 +530,7 @@ async function init() {
           currentUserCache = { ...profile, id: firebaseUser.uid, email: firebaseUser.email };
           sessionStorage.setItem('oficiosya_uid', firebaseUser.uid);
           sincronizarPushTrasLogin(firebaseUser.uid);
+          if (currentUserCache.tipo === 'oficio') programarPreguntaPush();
         } else if (!authBusy) {
           // Perfil aún no existe (registro a medias): no forzar logout visual
           console.warn('Perfil no encontrado todavía para', firebaseUser.uid);
@@ -1552,6 +1553,7 @@ async function iniciarSesion(e) {
     showToast('¡Bienvenido/a, ' + ((currentUserCache.nombre || '').split(' ')[0] || '') + '!');
     if (currentUserCache.tipo === 'oficio') {
       showMyProfile(false);
+      programarPreguntaPush();
     } else {
       showSection('search');
     }
@@ -3033,59 +3035,150 @@ function setupBottomNavInteraction() {
 
 
 // ===== NOTIFICACIONES PUSH (FCM) =====
+function pushYaActivado() {
+  try {
+    if (localStorage.getItem('oficiosya_push_on') === '1') return true;
+  } catch (e) {}
+  if (typeof Notification === 'undefined') return false;
+  if (Notification.permission !== 'granted') return false;
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  if (user && Array.isArray(user.fcmTokens) && user.fcmTokens.length) return true;
+  return false;
+}
+
+function marcarPushActivado() {
+  try { localStorage.setItem('oficiosya_push_on', '1'); } catch (e) {}
+}
+
 function updatePushStatusUI() {
+  const bar = document.getElementById('pushEnableBar');
+  if (!bar) return;
+
+  // Si ya está activado: ocultar botón y toda la barra (sin pruebas)
+  if (pushYaActivado()) {
+    bar.style.display = 'none';
+    return;
+  }
+
+  // Solo mostrar a profesionales logueados
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  if (!user || user.tipo !== 'oficio') {
+    bar.style.display = 'none';
+    return;
+  }
+
+  bar.style.display = '';
   const title = document.getElementById('pushStatusTitle');
   const desc = document.getElementById('pushStatusDesc');
   const btn = document.getElementById('btnActivarPush');
   const label = document.getElementById('btnActivarPushLabel');
-  if (!title || !btn) return;
+  if (btn) {
+    btn.disabled = false;
+    btn.style.pointerEvents = 'auto';
+    btn.style.opacity = '1';
+  }
 
-  const supported = typeof Notification !== 'undefined';
-  const permission = supported ? Notification.permission : 'unsupported';
-  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-  const hasToken = !!(user && Array.isArray(user.fcmTokens) && user.fcmTokens.length);
-
-  btn.disabled = false;
-  btn.classList.remove('btn-secondary');
-  btn.classList.add('btn-primary');
-  btn.style.opacity = '1';
-  btn.style.pointerEvents = 'auto';
-
-  if (!supported) {
-    title.textContent = 'Push no disponible';
-    desc.textContent = 'Este dispositivo o navegador no soporta notificaciones web.';
+  if (typeof Notification === 'undefined') {
+    if (title) title.textContent = 'Push no disponible';
+    if (desc) desc.textContent = 'Este dispositivo no soporta notificaciones web.';
     if (label) label.textContent = 'No disponible';
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
     return;
   }
 
-  if (permission === 'denied') {
-    title.textContent = 'Permiso bloqueado';
-    desc.textContent = 'En iPhone: Ajustes → Notificaciones → Oficios YA! → Permitir. Luego tocá Reintentar.';
+  if (Notification.permission === 'denied') {
+    if (title) title.textContent = 'Permiso bloqueado';
+    if (desc) desc.textContent = 'Activalo en Ajustes del teléfono y volvé a intentar.';
     if (label) label.textContent = 'Reintentar';
     return;
   }
 
-  if (permission === 'granted' && hasToken) {
-    title.textContent = 'Push activadas';
-    desc.textContent = 'Este dispositivo está registrado. Podés tocar "Actualizar" si dejaron de llegar.';
-    if (label) label.textContent = 'Actualizar';
-    btn.classList.remove('btn-primary');
-    btn.classList.add('btn-secondary');
-    return;
-  }
-
-  if (permission === 'granted' && !hasToken) {
-    title.textContent = 'Permiso OK — falta registrar';
-    desc.textContent = 'El sistema permitió avisos, pero hay que registrar este dispositivo. Tocá Activar.';
-    if (label) label.textContent = 'Activar';
-    return;
-  }
-
-  title.textContent = 'Notificaciones push';
-  desc.textContent = 'Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.';
+  if (title) title.textContent = 'Activá las notificaciones';
+  if (desc) desc.textContent = 'Así te enterás de reseñas y presupuestos aunque la app esté cerrada.';
   if (label) label.textContent = 'Activar';
 }
+
+function esAppInstalada() {
+  try {
+    if (window.matchMedia('(display-mode: standalone)').matches) return true;
+    if (window.navigator.standalone === true) return true;
+  } catch (e) {}
+  return false;
+}
+
+function mostrarModalPush() {
+  const modal = document.getElementById('pushPermissionModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function ocultarModalPush() {
+  const modal = document.getElementById('pushPermissionModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function debePreguntarPush() {
+  try {
+    if (localStorage.getItem('oficiosya_push_on') === '1') return false;
+    if (localStorage.getItem('oficiosya_push_ask_later') === '1') {
+      // volver a preguntar después de 3 días
+      const ts = parseInt(localStorage.getItem('oficiosya_push_ask_ts') || '0', 10);
+      if (Date.now() - ts < 3 * 24 * 60 * 60 * 1000) return false;
+    }
+  } catch (e) {}
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    // permiso ok pero quizás sin token: aún podemos pedir activar en silencio
+  }
+  if (typeof Notification !== 'undefined' && Notification.permission === 'denied') return false;
+  return true;
+}
+
+function programarPreguntaPush() {
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  if (!user || user.tipo !== 'oficio') return;
+  if (!debePreguntarPush()) {
+    updatePushStatusUI();
+    return;
+  }
+  // Esperar un poco tras abrir / instalar para no interrumpir de golpe
+  setTimeout(() => {
+    const u = getCurrentUser();
+    if (!u || u.tipo !== 'oficio') return;
+    if (!debePreguntarPush()) return;
+    // Preferible en app instalada; también si ya hay sesión profesional en móvil
+    if (esAppInstalada() || window.innerWidth <= 900) {
+      mostrarModalPush();
+    }
+  }, 1800);
+}
+
+async function aceptarPushDesdeModal() {
+  ocultarModalPush();
+  const ok = await activarNotificacionesPush();
+  if (ok) {
+    marcarPushActivado();
+    try { localStorage.removeItem('oficiosya_push_ask_later'); } catch (e) {}
+  }
+  updatePushStatusUI();
+}
+
+function rechazarPushDesdeModal() {
+  ocultarModalPush();
+  try {
+    localStorage.setItem('oficiosya_push_ask_later', '1');
+    localStorage.setItem('oficiosya_push_ask_ts', String(Date.now()));
+  } catch (e) {}
+  updatePushStatusUI();
+}
+
+window.aceptarPushDesdeModal = aceptarPushDesdeModal;
+window.rechazarPushDesdeModal = rechazarPushDesdeModal;
+window.mostrarModalPush = mostrarModalPush;
 
 async function activarNotificacionesPush() {
   try {
@@ -3171,7 +3264,8 @@ async function activarNotificacionesPush() {
       return false;
     }
 
-    showToast('Notificaciones push activadas en este dispositivo');
+    marcarPushActivado();
+    showToast('Notificaciones push activadas');
     updatePushStatusUI();
     return true;
   } catch (err) {
