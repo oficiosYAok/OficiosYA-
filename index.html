@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -670,13 +669,18 @@
     <div class="container">
       <h2 class="section-title"><i class="fas fa-bell"></i> Notificaciones</h2>
       
-      <div class="push-enable-bar" style="margin-bottom:1rem;">
-        <button type="button" class="btn btn-primary btn-sm" onclick="activarNotificacionesPush()">
-          <i class="fas fa-bell"></i> Activar notificaciones push
-        </button>
-        <p style="font-size:0.8rem;color:var(--text-light);margin-top:0.4rem;">Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.</p>
+      <div class="push-enable-bar" id="pushEnableBar">
+        <div class="push-enable-row">
+          <div class="push-enable-text">
+            <strong id="pushStatusTitle">Notificaciones push</strong>
+            <p id="pushStatusDesc">Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="btnActivarPush" onclick="activarNotificacionesPush(); return false;">
+            <i class="fas fa-bell"></i> <span id="btnActivarPushLabel">Activar</span>
+          </button>
+        </div>
       </div>
-<div id="notificationsList" class="notifications-list">
+      <div id="notificationsList" class="notifications-list">
         <!-- Notificaciones dinámicas -->
       </div>
     </div>
