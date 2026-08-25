@@ -529,6 +529,7 @@ async function init() {
         if (profile) {
           currentUserCache = { ...profile, id: firebaseUser.uid, email: firebaseUser.email };
           sessionStorage.setItem('oficiosya_uid', firebaseUser.uid);
+          sincronizarPushTrasLogin(firebaseUser.uid);
         } else if (!authBusy) {
           // Perfil aún no existe (registro a medias): no forzar logout visual
           console.warn('Perfil no encontrado todavía para', firebaseUser.uid);
@@ -2460,6 +2461,109 @@ async function enviarResena(e) {
 }
 
 // ===== NOTIFICATIONS =====
+
+function escaparHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function abrirLightbox(url) {
+  let lb = document.getElementById('imageLightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'imageLightbox';
+    lb.className = 'image-lightbox';
+    lb.innerHTML = '<button type="button" class="lightbox-close" aria-label="Cerrar">&times;</button><img src="" alt="Foto ampliada">';
+    document.body.appendChild(lb);
+    lb.addEventListener('click', (e) => {
+      if (e.target === lb || e.target.classList.contains('lightbox-close')) cerrarLightbox();
+    });
+  }
+  const img = lb.querySelector('img');
+  img.src = url;
+  lb.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function cerrarLightbox() {
+  const lb = document.getElementById('imageLightbox');
+  if (lb) lb.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+window.abrirLightbox = abrirLightbox;
+window.cerrarLightbox = cerrarLightbox;
+
+async function getQuoteById(quoteId) {
+  requireFirebase();
+  try {
+    const doc = await db.collection('quotes').doc(quoteId).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+  } catch (err) {
+    console.warn(err);
+    return null;
+  }
+}
+
+function mensajeWhatsAppPresupuesto(q) {
+  const nombre = q.clienteNombre || 'cliente';
+  const desc = (q.descripcion || '').trim();
+  const corto = desc.length > 120 ? desc.substring(0, 120) + '…' : desc;
+  let msg = 'Hola ' + nombre + ', te contacto por el presupuesto que solicitaste en la app Oficios YA!.';
+  if (corto) msg += ' Respecto a: "' + corto + '".';
+  msg += ' ¿Cuándo podríamos coordinar?';
+  return msg;
+}
+
+function renderNotifPresupuestoDetalle(q) {
+  if (!q) {
+    return '<p class="notif-detail-missing">No se pudo cargar el detalle del presupuesto.</p>';
+  }
+  const fotos = Array.isArray(q.fotos) ? q.fotos : [];
+  const fotosHtml = fotos.length
+    ? `<div class="notif-fotos">${fotos.map((f, i) =>
+        `<button type="button" class="notif-foto-btn" onclick="abrirLightbox('${String(f).replace(/'/g, "\\'")}')" title="Ampliar foto">
+          <img src="${f}" alt="Foto del trabajo ${i + 1}" loading="lazy">
+        </button>`
+      ).join('')}</div>`
+    : '<p class="notif-no-fotos">Sin fotos adjuntas</p>';
+
+  const wa = urlWhatsApp(q.telefono, mensajeWhatsAppPresupuesto(q));
+  const tel = q.telefono || '';
+
+  return `
+    <div class="notif-quote-detail">
+      <div class="notif-quote-grid">
+        <div><span class="nq-label">Cliente</span><span class="nq-val">${escaparHtml(q.clienteNombre || '—')}</span></div>
+        <div><span class="nq-label">Teléfono</span><span class="nq-val">${escaparHtml(tel || '—')}</span></div>
+        <div><span class="nq-label">Urgencia</span><span class="nq-val nq-urgencia">${escaparHtml(q.urgencia || 'Normal')}</span></div>
+        <div><span class="nq-label">Fecha</span><span class="nq-val">${escaparHtml(formatDateTime(q.fecha || q.createdAt))}</span></div>
+      </div>
+      <div class="notif-quote-desc">
+        <span class="nq-label">Descripción del trabajo</span>
+        <p>${escaparHtml(q.descripcion || 'Sin descripción')}</p>
+      </div>
+      <div class="notif-quote-photos-wrap">
+        <span class="nq-label">Fotos del problema</span>
+        ${fotosHtml}
+      </div>
+      <div class="notif-quote-actions">
+        ${wa ? `<a class="btn btn-whatsapp" href="${wa}" target="_blank" rel="noopener">
+          <i class="fab fa-whatsapp"></i> Responder por WhatsApp
+        </a>` : ''}
+        ${tel ? `<a class="btn btn-call" href="tel:${String(tel).replace(/"/g, '')}">
+          <i class="fas fa-phone"></i> Llamar
+        </a>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+
 async function showNotifications() {
   const user = getCurrentUser();
   if (!user) {
@@ -2496,33 +2600,44 @@ async function showNotifications() {
       return;
     }
 
-    // Solo quotes del profesional (las reglas no permiten leer todos)
+    // Presupuestos del profesional + detalle por id si hace falta
     const quotes = await getQuotesForProf(user.id);
+    const quotesById = {};
+    quotes.forEach(q => { quotesById[q.id] = q; });
+
+    // Completar quotes faltantes referenciados en notifs
+    for (const n of notifs) {
+      if (n.tipo === 'presupuesto' && n.quoteId && !quotesById[n.quoteId]) {
+        const q = await getQuoteById(n.quoteId);
+        if (q) quotesById[q.id] = q;
+      }
+    }
+
     container.innerHTML = notifs.map(n => {
       const icon = n.tipo === 'presupuesto' ? 'fa-file-invoice-dollar' : 'fa-star';
-      let extra = '';
+      let body = '';
       if (n.tipo === 'presupuesto' && n.quoteId) {
-        const q = quotes.find(x => x.id === n.quoteId);
-        if (q) {
-          const fotos = (q.fotos || []).map(f => `<img src="${f}" alt="foto" style="width:56px;height:56px;object-fit:cover;border-radius:6px;margin:4px 4px 0 0;">`).join('');
-          extra = `
-            <p style="font-size:0.85rem;margin-top:0.4rem;"><strong>Contacto:</strong> ${q.telefono} · <strong>Urgencia:</strong> ${q.urgencia}</p>
-            ${fotos ? `<div style="margin-top:0.4rem;">${fotos}</div>` : ''}
-          `;
-        }
+        body = renderNotifPresupuestoDetalle(quotesById[n.quoteId]);
+      } else if (n.tipo === 'resena') {
+        body = `
+          <div class="notif-review-detail">
+            ${n.detalle ? `<p class="notif-review-text">${escaparHtml(n.detalle)}</p>` : ''}
+          </div>
+        `;
       }
       return `
-        <div class="notif-item ${n.read ? '' : 'unread'}">
-          <div class="notif-icon">
-            <i class="fas ${icon}"></i>
+        <article class="notif-item notif-card ${n.read ? '' : 'unread'} ${n.tipo === 'presupuesto' ? 'notif-presupuesto' : 'notif-resena'}">
+          <div class="notif-card-header">
+            <div class="notif-icon">
+              <i class="fas ${icon}"></i>
+            </div>
+            <div class="notif-card-title">
+              <p class="notif-msg"><strong>${escaparHtml(n.mensaje)}</strong></p>
+              <span class="notif-time">${formatDateTime(n.fecha)}</span>
+            </div>
           </div>
-          <div class="notif-content">
-            <p><strong>${n.mensaje}</strong></p>
-            ${n.detalle ? `<p style="font-size:0.9rem;color:var(--text-light);">${n.detalle}</p>` : ''}
-            ${extra}
-            <span class="notif-time">${formatDateTime(n.fecha)}</span>
-          </div>
-        </div>
+          ${body}
+        </article>
       `;
     }).join('');
   } catch (err) {
@@ -2913,6 +3028,117 @@ function setupBottomNavInteraction() {
   setTimeout(mostrarBarraInferior, 300);
   setTimeout(mostrarBarraInferior, 1000);
 }
+
+
+
+// ===== NOTIFICACIONES PUSH (FCM) =====
+async function activarNotificacionesPush() {
+  try {
+    if (!firebaseReady) {
+      showToast('Firebase no está configurado', 'error');
+      return false;
+    }
+    if (!('Notification' in window)) {
+      showToast('Este navegador no soporta notificaciones', 'error');
+      return false;
+    }
+    if (!messaging) {
+      showToast('Las notificaciones push no están disponibles aquí', 'error');
+      return false;
+    }
+
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== 'granted') {
+      showToast('Permiso de notificaciones denegado', 'error');
+      return false;
+    }
+
+    if (!firebaseVapidKey || firebaseVapidKey === 'TU_VAPID_KEY') {
+      showToast('Falta configurar la clave VAPID en firebase-config.js', 'error');
+      console.error('Definí firebaseVapidKey (Cloud Messaging → Web Push certificates)');
+      return false;
+    }
+
+    const reg = await navigator.serviceWorker.ready;
+    const token = await messaging.getToken({
+      vapidKey: firebaseVapidKey,
+      serviceWorkerRegistration: reg
+    });
+
+    if (!token) {
+      showToast('No se pudo obtener el token de notificaciones', 'error');
+      return false;
+    }
+
+    const user = getCurrentUser();
+    if (user && user.id) {
+      await guardarTokenFCM(user.id, token);
+    } else {
+      // Guardar temporal hasta login
+      try { localStorage.setItem('oficiosya_fcm_pending', token); } catch (e) {}
+    }
+
+    showToast('Notificaciones push activadas');
+    return true;
+  } catch (err) {
+    console.error('activarNotificacionesPush', err);
+    showToast('No se pudieron activar las notificaciones push', 'error');
+    return false;
+  }
+}
+
+async function guardarTokenFCM(uid, token) {
+  if (!uid || !token || !firebaseReady) return;
+  try {
+    const ref = db.collection('users').doc(uid);
+    const doc = await ref.get();
+    const data = doc.exists ? doc.data() : {};
+    const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens.slice() : [];
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+      // máximo 10 tokens por usuario
+      while (tokens.length > 10) tokens.shift();
+    }
+    await ref.set({
+      fcmTokens: tokens,
+      fcmTokenUpdatedAt: new Date().toISOString()
+    }, { merge: true });
+    if (currentUserCache && currentUserCache.id === uid) {
+      currentUserCache.fcmTokens = tokens;
+    }
+  } catch (err) {
+    console.error('guardarTokenFCM', err);
+  }
+}
+
+async function sincronizarPushTrasLogin(uid) {
+  try {
+    let pending = null;
+    try { pending = localStorage.getItem('oficiosya_fcm_pending'); } catch (e) {}
+    if (pending) {
+      await guardarTokenFCM(uid, pending);
+      try { localStorage.removeItem('oficiosya_fcm_pending'); } catch (e) {}
+    }
+    // Si ya había permiso, renovar token
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && messaging) {
+      if (firebaseVapidKey && firebaseVapidKey !== 'TU_VAPID_KEY') {
+        const reg = await navigator.serviceWorker.ready;
+        const token = await messaging.getToken({
+          vapidKey: firebaseVapidKey,
+          serviceWorkerRegistration: reg
+        });
+        if (token) await guardarTokenFCM(uid, token);
+      }
+    }
+  } catch (err) {
+    console.warn('sincronizarPushTrasLogin', err);
+  }
+}
+
+window.activarNotificacionesPush = activarNotificacionesPush;
 
 
 document.addEventListener('DOMContentLoaded', init);
