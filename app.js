@@ -3236,5 +3236,114 @@ async function sincronizarPushTrasLogin(uid) {
 
 window.activarNotificacionesPush = activarNotificacionesPush;
 
+async function probarNotificacionLocal() {
+  try {
+    if (!('Notification' in window)) {
+      showToast('Este dispositivo no soporta Notification API', 'error');
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm !== 'granted') {
+      perm = await Notification.requestPermission();
+    }
+    if (perm !== 'granted') {
+      showToast('Permiso denegado. Revisá Ajustes del iPhone.', 'error');
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready.catch(() => null);
+    if (reg && reg.showNotification) {
+      await reg.showNotification('Prueba local — Oficios YA!', {
+        body: 'Si ves esto, el iPhone permite avisos de esta app.',
+        icon: './icon-192.png',
+        badge: './icon-192.png',
+        tag: 'test-local'
+      });
+    } else {
+      new Notification('Prueba local — Oficios YA!', {
+        body: 'Si ves esto, el iPhone permite avisos de esta app.',
+        icon: './icon-192.png'
+      });
+    }
+    showToast('Aviso local enviado. ¿Lo viste en la pantalla de bloqueo/banner?');
+  } catch (err) {
+    console.error(err);
+    showToast('Falló la prueba local: ' + (err.message || err), 'error');
+  }
+}
+
+async function probarNotificacionPushFCM() {
+  try {
+    if (!firebaseReady) {
+      showToast('Firebase no configurado', 'error');
+      return;
+    }
+    const user = getCurrentUser();
+    if (!user) {
+      showToast('Iniciá sesión como profesional', 'error');
+      return;
+    }
+    // Asegurar token antes de pedir al servidor
+    const ok = await activarNotificacionesPush();
+    if (!ok) {
+      showToast('No se pudo registrar el dispositivo para la prueba', 'error');
+      return;
+    }
+    showToast('Enviando push de prueba desde Firebase...');
+    const callable = firebase.functions().httpsCallable('testPush');
+    const res = await callable({});
+    console.log('testPush result', res && res.data);
+    showToast('Push de prueba enviado. Cerrá la app un momento y mirá si llega.');
+  } catch (err) {
+    console.error('probarNotificacionPushFCM', err);
+    const code = err && err.code;
+    const msg = (err && err.message) || 'Error al probar push';
+    if (String(msg).includes('functions') || code === 'functions/not-found') {
+      showToast('Falta desplegar Cloud Functions (testPush). Revisá el deploy.', 'error');
+    } else {
+      showToast(msg, 'error');
+    }
+  }
+}
+
+window.probarNotificacionLocal = probarNotificacionLocal;
+window.probarNotificacionPushFCM = probarNotificacionPushFCM;
+
+// Mensajes FCM con la app abierta
+function setupForegroundPush() {
+  try {
+    if (!firebaseReady || !messaging) return;
+    messaging.onMessage((payload) => {
+      console.log('FCM foreground', payload);
+      const title =
+        (payload.notification && payload.notification.title) ||
+        (payload.data && payload.data.title) ||
+        'Oficios YA!';
+      const body =
+        (payload.notification && payload.notification.body) ||
+        (payload.data && payload.data.body) ||
+        '';
+      showToast((title + (body ? ': ' + body : '')).substring(0, 120));
+      if (Notification.permission === 'granted') {
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification(title, {
+            body: body,
+            icon: './icon-192.png',
+            data: payload.data || {},
+            tag: (payload.data && payload.data.tag) || 'oficiosya-fg'
+          });
+        }).catch(() => {});
+      }
+      if (typeof showNotifications === 'function') {
+        const u = getCurrentUser();
+        if (u && u.tipo === 'oficio') showNotifications();
+      }
+    });
+  } catch (err) {
+    console.warn('setupForegroundPush', err);
+  }
+}
+
+
+
 
 document.addEventListener('DOMContentLoaded', init);
