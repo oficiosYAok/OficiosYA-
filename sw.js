@@ -1,11 +1,17 @@
-/* Service Worker — Oficios YA! PWA */
-const CACHE_NAME = 'oficiosya-v12';
+/* Service Worker — Oficios YA! PWA + Firebase Cloud Messaging */
+
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
+importScripts('./firebase-sw-config.js');
+
+const CACHE_NAME = 'oficiosya-v13';
 const PRECACHE = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './firebase-config.js',
+  './firebase-sw-config.js',
   './manifest.webmanifest',
   './logo.jpg',
   './icon-192.png',
@@ -32,14 +38,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Red primero para HTML/JS (datos frescos); caché como respaldo offline
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
 
-  // No cachear APIs de Firebase / Google
   if (
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('firebaseio.com') ||
@@ -60,5 +64,54 @@ self.addEventListener('fetch', (event) => {
       .catch(() =>
         caches.match(req).then((cached) => cached || caches.match('./index.html'))
       )
+  );
+});
+
+try {
+  const cfg = self.__FIREBASE_CONFIG__;
+  if (cfg && cfg.apiKey && cfg.apiKey !== 'TU_API_KEY') {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(cfg);
+    }
+    const messaging = firebase.messaging();
+
+    messaging.onBackgroundMessage((payload) => {
+      const title =
+        (payload.notification && payload.notification.title) ||
+        (payload.data && payload.data.title) ||
+        'Oficios YA!';
+      const body =
+        (payload.notification && payload.notification.body) ||
+        (payload.data && payload.data.body) ||
+        'Tenés una nueva notificación';
+      const options = {
+        body: body,
+        icon: './icon-192.png',
+        badge: './icon-192.png',
+        data: payload.data || {},
+        tag: (payload.data && payload.data.tag) || 'oficiosya',
+        renotify: true
+      };
+      return self.registration.showNotification(title, options);
+    });
+  }
+} catch (err) {
+  console.warn('FCM SW:', err);
+}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || './#notifications';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if (client.url.includes(self.registration.scope) && 'focus' in client) {
+          client.focus();
+          if (client.navigate) client.navigate(target);
+          return;
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(target);
+    })
   );
 });
