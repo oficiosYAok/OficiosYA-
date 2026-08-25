@@ -2583,6 +2583,7 @@ async function showNotifications() {
   }
   container.innerHTML = '<p style="text-align:center;color:var(--text-light);">Cargando...</p>';
   showSection('notifications');
+  try { updatePushStatusUI(); } catch (e) { console.warn(e); }
 
   try {
     const notifs = await getNotifications(user.id);
@@ -3032,63 +3033,158 @@ function setupBottomNavInteraction() {
 
 
 // ===== NOTIFICACIONES PUSH (FCM) =====
+function updatePushStatusUI() {
+  const title = document.getElementById('pushStatusTitle');
+  const desc = document.getElementById('pushStatusDesc');
+  const btn = document.getElementById('btnActivarPush');
+  const label = document.getElementById('btnActivarPushLabel');
+  if (!title || !btn) return;
+
+  const supported = typeof Notification !== 'undefined';
+  const permission = supported ? Notification.permission : 'unsupported';
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  const hasToken = !!(user && Array.isArray(user.fcmTokens) && user.fcmTokens.length);
+
+  btn.disabled = false;
+  btn.classList.remove('btn-secondary');
+  btn.classList.add('btn-primary');
+  btn.style.opacity = '1';
+  btn.style.pointerEvents = 'auto';
+
+  if (!supported) {
+    title.textContent = 'Push no disponible';
+    desc.textContent = 'Este dispositivo o navegador no soporta notificaciones web.';
+    if (label) label.textContent = 'No disponible';
+    btn.disabled = true;
+    return;
+  }
+
+  if (permission === 'denied') {
+    title.textContent = 'Permiso bloqueado';
+    desc.textContent = 'En iPhone: Ajustes → Notificaciones → Oficios YA! → Permitir. Luego tocá Reintentar.';
+    if (label) label.textContent = 'Reintentar';
+    return;
+  }
+
+  if (permission === 'granted' && hasToken) {
+    title.textContent = 'Push activadas';
+    desc.textContent = 'Este dispositivo está registrado. Podés tocar "Actualizar" si dejaron de llegar.';
+    if (label) label.textContent = 'Actualizar';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+    return;
+  }
+
+  if (permission === 'granted' && !hasToken) {
+    title.textContent = 'Permiso OK — falta registrar';
+    desc.textContent = 'El sistema permitió avisos, pero hay que registrar este dispositivo. Tocá Activar.';
+    if (label) label.textContent = 'Activar';
+    return;
+  }
+
+  title.textContent = 'Notificaciones push';
+  desc.textContent = 'Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.';
+  if (label) label.textContent = 'Activar';
+}
+
 async function activarNotificacionesPush() {
   try {
+    updatePushStatusUI();
+
     if (!firebaseReady) {
-      showToast('Firebase no está configurado', 'error');
+      showToast('Firebase no está configurado. Revisá firebase-config.js', 'error');
       return false;
     }
     if (!('Notification' in window)) {
-      showToast('Este navegador no soporta notificaciones', 'error');
+      showToast('Este dispositivo no soporta notificaciones', 'error');
+      updatePushStatusUI();
       return false;
     }
     if (!messaging) {
-      showToast('Las notificaciones push no están disponibles aquí', 'error');
+      showToast('Abrí la app desde el ícono de inicio (PWA). En iPhone usá Safari.', 'error');
+      updatePushStatusUI();
       return false;
     }
 
     let permission = Notification.permission;
-    if (permission === 'default') {
+    if (permission === 'denied') {
+      showToast('El permiso está bloqueado. Activalo en Ajustes del iPhone y reintentá.', 'error');
+      updatePushStatusUI();
+      return false;
+    }
+    if (permission !== 'granted') {
       permission = await Notification.requestPermission();
     }
     if (permission !== 'granted') {
-      showToast('Permiso de notificaciones denegado', 'error');
+      showToast('No se concedió el permiso de notificaciones', 'error');
+      updatePushStatusUI();
       return false;
     }
 
-    if (!firebaseVapidKey || firebaseVapidKey === 'TU_VAPID_KEY') {
-      showToast('Falta configurar la clave VAPID en firebase-config.js', 'error');
-      console.error('Definí firebaseVapidKey (Cloud Messaging → Web Push certificates)');
+    if (typeof firebaseVapidKey === 'undefined' || !firebaseVapidKey || firebaseVapidKey === 'TU_VAPID_KEY') {
+      showToast('Falta la clave VAPID en firebase-config.js', 'error');
       return false;
     }
 
-    const reg = await navigator.serviceWorker.ready;
+    showToast('Registrando este dispositivo...');
+
+    // Asegurar service worker
+    let reg = null;
+    if ('serviceWorker' in navigator) {
+      try {
+        reg = await navigator.serviceWorker.register('./sw.js');
+        reg = await navigator.serviceWorker.ready;
+      } catch (swErr) {
+        console.warn(swErr);
+        reg = await navigator.serviceWorker.ready.catch(() => null);
+      }
+    }
+    if (!reg) {
+      showToast('No hay Service Worker. Recargá la app instalada.', 'error');
+      return false;
+    }
+
     const token = await messaging.getToken({
       vapidKey: firebaseVapidKey,
       serviceWorkerRegistration: reg
     });
 
     if (!token) {
-      showToast('No se pudo obtener el token de notificaciones', 'error');
+      showToast('No se pudo obtener el token. Probá cerrar la app y abrirla de nuevo.', 'error');
       return false;
     }
 
     const user = getCurrentUser();
     if (user && user.id) {
       await guardarTokenFCM(user.id, token);
+      // refrescar cache local
+      try {
+        const profile = await loadUserProfile(user.id);
+        if (profile) {
+          currentUserCache = { ...currentUserCache, ...profile, id: user.id, fcmTokens: profile.fcmTokens || [token] };
+        }
+      } catch (e) {}
     } else {
-      // Guardar temporal hasta login
       try { localStorage.setItem('oficiosya_fcm_pending', token); } catch (e) {}
+      showToast('Activado. Iniciá sesión para vincular el dispositivo.', 'error');
+      updatePushStatusUI();
+      return false;
     }
 
-    showToast('Notificaciones push activadas');
+    showToast('Notificaciones push activadas en este dispositivo');
+    updatePushStatusUI();
     return true;
   } catch (err) {
     console.error('activarNotificacionesPush', err);
-    showToast('No se pudieron activar las notificaciones push', 'error');
+    const msg = (err && err.message) ? err.message : 'No se pudieron activar las notificaciones push';
+    showToast(msg, 'error');
+    updatePushStatusUI();
     return false;
   }
 }
+
+window.updatePushStatusUI = updatePushStatusUI;
+
 
 async function guardarTokenFCM(uid, token) {
   if (!uid || !token || !firebaseReady) return;
