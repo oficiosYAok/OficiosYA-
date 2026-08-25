@@ -3289,7 +3289,7 @@ async function probarNotificacionPushFCM() {
       return;
     }
     showToast('Enviando push de prueba desde Firebase...');
-    const callable = firebase.functions().httpsCallable('testPush');
+    const callable = firebase.app().functions('southamerica-east1').httpsCallable('testPush');
     const res = await callable({});
     console.log('testPush result', res && res.data);
     showToast('Push de prueba enviado. Cerrá la app un momento y mirá si llega.');
