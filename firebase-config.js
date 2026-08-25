@@ -21,7 +21,7 @@ const firebaseConfig = {
 };
 
 // Clave Web Push (VAPID) — Firebase Console → Project settings → Cloud Messaging → Web Push certificates
-const firebaseVapidKey = "TU_VAPID_KEY";
+const firebaseVapidKey = "BHfYjzPTtMXSGUQMPKQwRi4fqjPN2j7QTFPs_w8rIApEQEhNbeNi0abJAyNLmYTAw2y3BRoFzXXf4A57tckft7U";
 
 // Inicialización (no modificar)
 let app, auth, db, storage, messaging;
