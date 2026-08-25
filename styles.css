@@ -3157,3 +3157,44 @@ img {
     height: 76px;
   }
 }
+
+
+.push-enable-bar {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff7ed, #ffedd5);
+  border: 1px solid #fed7aa;
+}
+
+.push-enable-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.push-enable-text {
+  flex: 1;
+  min-width: 180px;
+}
+
+.push-enable-text strong {
+  display: block;
+  color: var(--secondary);
+  font-size: 0.95rem;
+}
+
+.push-enable-text p {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+#btnActivarPush {
+  flex-shrink: 0;
+  min-height: 42px;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
