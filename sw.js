@@ -1,10 +1,11 @@
+
 /* Service Worker — Oficios YA! PWA + Firebase Cloud Messaging */
 
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v13';
+const CACHE_NAME = 'oficiosya-v14';
 const PRECACHE = [
   './',
   './index.html',
