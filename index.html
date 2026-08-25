@@ -669,7 +669,14 @@
   <section id="notifications" class="section">
     <div class="container">
       <h2 class="section-title"><i class="fas fa-bell"></i> Notificaciones</h2>
-      <div id="notificationsList" class="notifications-list">
+      
+      <div class="push-enable-bar" style="margin-bottom:1rem;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="activarNotificacionesPush()">
+          <i class="fas fa-bell"></i> Activar notificaciones push
+        </button>
+        <p style="font-size:0.8rem;color:var(--text-light);margin-top:0.4rem;">Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.</p>
+      </div>
+<div id="notificationsList" class="notifications-list">
         <!-- Notificaciones dinámicas -->
       </div>
     </div>
@@ -845,6 +852,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
   <script src="./firebase-config.js"></script>
   <script src="./app.js"></script>
   <script>
