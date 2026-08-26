@@ -2629,7 +2629,9 @@ async function showNotifications() {
         `;
       }
       return `
-        <article class="notif-item notif-card ${n.read ? '' : 'unread'} ${n.tipo === 'presupuesto' ? 'notif-presupuesto' : 'notif-resena'}">
+        <article class="notif-item notif-card ${n.read ? '' : 'unread'} ${n.tipo === 'presupuesto' ? 'notif-presupuesto' : 'notif-resena'}"
+          id="${n.tipo === 'presupuesto' && n.quoteId ? 'notif-quote-' + n.quoteId : (n.reviewId ? 'notif-review-' + n.reviewId : 'notif-' + (n.id || ''))}"
+          data-tipo="${n.tipo || ''}" data-quote-id="${n.quoteId || ''}" data-review-id="${n.reviewId || ''}">
           <div class="notif-card-header">
             <div class="notif-icon">
               <i class="fas ${icon}"></i>
@@ -3440,4 +3442,125 @@ function setupForegroundPush() {
 
 
 
-document.addEventListener('DOMContentLoaded', init);
+
+// ===== DEEP LINK DESDE PUSH =====
+function parseNotifDeepLink(hash) {
+  const h = (hash || location.hash || '').replace(/^#/, '');
+  // notif/presupuesto/ID  |  notif/resena/ID
+  const m = h.match(/^notif\/(presupuesto|resena|reseña)\/([^/?#]+)/i);
+  if (m) {
+    return {
+      tipo: m[1].toLowerCase().startsWith('res') ? 'resena' : 'presupuesto',
+      id: decodeURIComponent(m[2])
+    };
+  }
+  if (h === 'notifications' || h.startsWith('notifications')) {
+    return { tipo: 'list', id: null };
+  }
+  return null;
+}
+
+async function abrirNotificacionDesdePush(tipo, id) {
+  const user = getCurrentUser();
+  if (!user) {
+    showSection('login');
+    showToast('Iniciá sesión para ver la notificación');
+    // guardar pendiente
+    try {
+      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({ tipo, id }));
+    } catch (e) {}
+    return;
+  }
+  if (user.tipo !== 'oficio') {
+    showToast('Las notificaciones son para profesionales', 'error');
+    return;
+  }
+
+  await showNotifications();
+
+  // Esperar a que el DOM pinte
+  setTimeout(() => {
+    let el = null;
+    if (tipo === 'presupuesto' && id) {
+      el = document.getElementById('notif-quote-' + id);
+    } else if ((tipo === 'resena' || tipo === 'reseña') && id) {
+      el = document.getElementById('notif-review-' + id);
+    }
+    if (el) {
+      el.classList.add('notif-highlight');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => el.classList.remove('notif-highlight'), 4000);
+    } else if (tipo === 'presupuesto' && id) {
+      // Intentar cargar el presupuesto suelto
+      getQuoteById(id).then((q) => {
+        if (!q) {
+          showToast('No se encontró ese presupuesto', 'error');
+          return;
+        }
+        const container = document.getElementById('notificationsList');
+        if (container) {
+          const html = `<article class="notif-item notif-card notif-presupuesto notif-highlight" id="notif-quote-${id}">
+            <div class="notif-card-header">
+              <div class="notif-icon"><i class="fas fa-file-invoice-dollar"></i></div>
+              <div class="notif-card-title">
+                <p class="notif-msg"><strong>Pedido de presupuesto</strong></p>
+              </div>
+            </div>
+            ${renderNotifPresupuestoDetalle(q)}
+          </article>`;
+          container.insertAdjacentHTML('afterbegin', html);
+          const el2 = document.getElementById('notif-quote-' + id);
+          if (el2) el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    } else {
+      showToast('Abrimos tus notificaciones');
+    }
+  }, 350);
+}
+
+function procesarDeepLinkNotificacion() {
+  const parsed = parseNotifDeepLink(location.hash);
+  if (!parsed) return false;
+  if (parsed.tipo === 'list') {
+    const user = getCurrentUser();
+    if (user && user.tipo === 'oficio') showNotifications();
+    return true;
+  }
+  abrirNotificacionDesdePush(parsed.tipo, parsed.id);
+  return true;
+}
+
+function setupPushDeepLinkListeners() {
+  // Clic en notificación (app ya abierta): mensaje del SW
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      const d = event.data || {};
+      if (d.type !== 'OPEN_NOTIF') return;
+      if (d.tipo === 'presupuesto' && d.quoteId) {
+        history.replaceState({ section: 'notifications' }, '', '#notif/presupuesto/' + encodeURIComponent(d.quoteId));
+        abrirNotificacionDesdePush('presupuesto', d.quoteId);
+      } else if ((d.tipo === 'resena' || d.tipo === 'reseña') && d.reviewId) {
+        history.replaceState({ section: 'notifications' }, '', '#notif/resena/' + encodeURIComponent(d.reviewId));
+        abrirNotificacionDesdePush('resena', d.reviewId);
+      } else {
+        showNotifications();
+      }
+    });
+  }
+
+  // Si la app se abrió con el hash del push
+  window.addEventListener('hashchange', () => {
+    procesarDeepLinkNotificacion();
+  });
+}
+
+window.abrirNotificacionDesdePush = abrirNotificacionDesdePush;
+window.procesarDeepLinkNotificacion = procesarDeepLinkNotificacion;
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  try { setupPushDeepLinkListeners(); } catch (e) { console.warn(e); }
+  setTimeout(() => { try { procesarDeepLinkNotificacion(); } catch (e) {} }, 900);
+});
