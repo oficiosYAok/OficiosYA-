@@ -5,7 +5,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v14';
+const CACHE_NAME = 'oficiosya-v15';
 const PRECACHE = [
   './',
   './index.html',
@@ -85,12 +85,17 @@ try {
         (payload.notification && payload.notification.body) ||
         (payload.data && payload.data.body) ||
         'Tenés una nueva notificación';
+      const data = Object.assign({}, payload.data || {});
+      if (payload.notification) {
+        if (!data.title && payload.notification.title) data.title = payload.notification.title;
+        if (!data.body && payload.notification.body) data.body = payload.notification.body;
+      }
       const options = {
         body: body,
         icon: './icon-192.png',
         badge: './icon-192.png',
-        data: payload.data || {},
-        tag: (payload.data && payload.data.tag) || 'oficiosya',
+        data: data,
+        tag: data.tag || 'oficiosya',
         renotify: true
       };
       return self.registration.showNotification(title, options);
@@ -102,17 +107,41 @@ try {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || './#notifications';
+  const d = event.notification.data || {};
+  let target = d.url || './#notifications';
+  // Normalizar deep link
+  if (d.tipo === 'presupuesto' && d.quoteId) {
+    target = './#notif/presupuesto/' + encodeURIComponent(d.quoteId);
+  } else if ((d.tipo === 'resena' || d.tipo === 'reseña') && d.reviewId) {
+    target = './#notif/resena/' + encodeURIComponent(d.reviewId);
+  } else if (target && !target.startsWith('./') && !target.startsWith('http') && target.startsWith('#')) {
+    target = './' + target;
+  }
+
+  const payload = {
+    type: 'OPEN_NOTIF',
+    url: target,
+    tipo: d.tipo || '',
+    quoteId: d.quoteId || '',
+    reviewId: d.reviewId || ''
+  };
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const client of list) {
-        if (client.url.includes(self.registration.scope) && 'focus' in client) {
+        if ('focus' in client) {
           client.focus();
-          if (client.navigate) client.navigate(target);
+          client.postMessage(payload);
+          try {
+            const abs = new URL(target, self.registration.scope).href;
+            if (client.navigate) client.navigate(abs);
+          } catch (e) {}
           return;
         }
       }
-      if (clients.openWindow) return clients.openWindow(target);
+      if (clients.openWindow) {
+        return clients.openWindow(new URL(target, self.registration.scope).href);
+      }
     })
   );
 });
