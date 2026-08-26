@@ -3242,3 +3242,16 @@ img {
 #pushPermissionModal[style*="flex"] {
   display: flex !important;
 }
+
+
+.notif-highlight {
+  outline: 3px solid var(--primary);
+  box-shadow: 0 0 0 6px rgba(232, 93, 4, 0.25);
+  transition: outline 0.3s, box-shadow 0.3s;
+  animation: notifPulse 1.2s ease-in-out 2;
+}
+
+@keyframes notifPulse {
+  0%, 100% { box-shadow: 0 0 0 6px rgba(232, 93, 4, 0.2); }
+  50% { box-shadow: 0 0 0 10px rgba(232, 93, 4, 0.35); }
+}
