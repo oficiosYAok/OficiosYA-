@@ -3493,20 +3493,70 @@ async function sincronizarPushTrasLogin(uid) {
       await guardarTokenFCM(uid, pending);
       try { localStorage.removeItem('oficiosya_fcm_pending'); } catch (e) {}
     }
-    // Si ya había permiso, renovar token
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && messaging) {
-      if (firebaseVapidKey && firebaseVapidKey !== 'TU_VAPID_KEY') {
-        const reg = await navigator.serviceWorker.ready;
-        const token = await messaging.getToken({
-          vapidKey: firebaseVapidKey,
-          serviceWorkerRegistration: reg
-        });
-        if (token) await guardarTokenFCM(uid, token);
-      }
-    }
+    await refrescarTokenFCM(uid);
   } catch (err) {
     console.warn('sincronizarPushTrasLogin', err);
   }
+}
+
+/** Renueva el token FCM y lo guarda (llamar al abrir la app / volver al frente) */
+async function refrescarTokenFCM(uid) {
+  try {
+    if (!uid || !firebaseReady || !messaging) return null;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return null;
+    if (!firebaseVapidKey || firebaseVapidKey === 'TU_VAPID_KEY') return null;
+
+    let reg = null;
+    if ('serviceWorker' in navigator) {
+      try {
+        reg = await navigator.serviceWorker.register('./sw.js');
+        reg = await navigator.serviceWorker.ready;
+      } catch (e) {
+        reg = await navigator.serviceWorker.ready.catch(() => null);
+      }
+    }
+    if (!reg) return null;
+
+    const token = await messaging.getToken({
+      vapidKey: firebaseVapidKey,
+      serviceWorkerRegistration: reg
+    });
+    if (token) {
+      await guardarTokenFCM(uid, token);
+      marcarPushActivado();
+      console.log('FCM token actualizado');
+      return token;
+    }
+  } catch (err) {
+    console.warn('refrescarTokenFCM', err);
+  }
+  return null;
+}
+
+function setupFcmTokenRefresh() {
+  // Cada vez que la app vuelve al frente, renovar token
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    const user = getCurrentUser();
+    if (user && user.id && user.tipo === 'oficio') {
+      refrescarTokenFCM(user.id);
+    }
+  });
+  window.addEventListener('focus', () => {
+    const user = getCurrentUser();
+    if (user && user.id && user.tipo === 'oficio') {
+      refrescarTokenFCM(user.id);
+    }
+  });
+  // Si el token de FCM rota
+  try {
+    if (messaging && typeof messaging.onTokenRefresh === 'function') {
+      messaging.onTokenRefresh(() => {
+        const user = getCurrentUser();
+        if (user && user.id) refrescarTokenFCM(user.id);
+      });
+    }
+  } catch (e) {}
 }
 
 window.activarNotificacionesPush = activarNotificacionesPush;
@@ -3744,5 +3794,6 @@ window.procesarDeepLinkNotificacion = procesarDeepLinkNotificacion;
 document.addEventListener('DOMContentLoaded', () => {
   init();
   try { setupPushDeepLinkListeners(); } catch (e) { console.warn(e); }
+  try { setupFcmTokenRefresh(); } catch (e) { console.warn(e); }
   setTimeout(() => { try { procesarDeepLinkNotificacion(); } catch (e) {} }, 900);
 });
