@@ -2555,43 +2555,69 @@ function mensajeWhatsAppPresupuesto(q) {
   return msg;
 }
 
+
+function tiempoRelativoNotif(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Ahora';
+  if (mins < 60) return mins + ' min';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + ' h';
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'Ayer';
+  if (days < 7) return days + ' d';
+  return formatDateTime(isoStr);
+}
+
 function renderNotifPresupuestoDetalle(q) {
   if (!q) {
     return '<p class="notif-detail-missing">No se pudo cargar el detalle del presupuesto.</p>';
   }
   const fotos = Array.isArray(q.fotos) ? q.fotos : [];
   const fotosHtml = fotos.length
-    ? `<div class="notif-fotos">${fotos.map((f, i) =>
-        `<button type="button" class="notif-foto-btn" onclick="abrirLightbox('${String(f).replace(/'/g, "\\'")}')" title="Ampliar foto">
-          <img src="${f}" alt="Foto del trabajo ${i + 1}" loading="lazy">
+    ? `<div class="quote-detail-fotos">${fotos.map((f, i) =>
+        `<button type="button" class="quote-detail-foto" onclick="abrirLightbox('${String(f).replace(/'/g, "\\'")}')" title="Ampliar foto">
+          <img src="${f}" alt="Foto ${i + 1}" loading="lazy">
         </button>`
       ).join('')}</div>`
     : '<p class="notif-no-fotos">Sin fotos adjuntas</p>';
 
   const wa = urlWhatsApp(q.telefono, mensajeWhatsAppPresupuesto(q));
   const tel = q.telefono || '';
+  const urg = (q.urgencia || 'Normal').trim();
+  const urgClass = /urgent|urgente/i.test(urg) ? 'urg-alta' : 'urg-normal';
 
   return `
-    <div class="notif-quote-detail">
-      <div class="notif-quote-grid">
-        <div><span class="nq-label">Cliente</span><span class="nq-val">${escaparHtml(q.clienteNombre || '—')}</span></div>
-        <div><span class="nq-label">Teléfono</span><span class="nq-val">${escaparHtml(tel || '—')}</span></div>
-        <div><span class="nq-label">Urgencia</span><span class="nq-val nq-urgencia">${escaparHtml(q.urgencia || 'Normal')}</span></div>
-        <div><span class="nq-label">Fecha</span><span class="nq-val">${escaparHtml(formatDateTime(q.fecha || q.createdAt))}</span></div>
+    <div class="quote-detail-page">
+      <span class="quote-urg-chip ${urgClass}">${escaparHtml(urg)}</span>
+
+      <div class="quote-client-card">
+        <div class="quote-client-avatar"><i class="fas fa-user"></i></div>
+        <div class="quote-client-info">
+          <strong>${escaparHtml(q.clienteNombre || 'Cliente')}</strong>
+          ${tel ? `<span><i class="fas fa-phone-alt"></i> ${escaparHtml(tel)}</span>` : ''}
+          ${q.localidad || q.zona || q.domicilio ? `<span><i class="fas fa-map-marker-alt"></i> ${escaparHtml([q.localidad || q.zona, q.provincia].filter(Boolean).join(', ') || q.domicilio || '')}</span>` : ''}
+        </div>
       </div>
-      <div class="notif-quote-desc">
-        <span class="nq-label">Descripción del trabajo</span>
+
+      <div class="quote-block">
+        <h4><i class="fas fa-clipboard-list"></i> Descripción</h4>
         <p>${escaparHtml(q.descripcion || 'Sin descripción')}</p>
       </div>
-      <div class="notif-quote-photos-wrap">
-        <span class="nq-label">Fotos del problema</span>
+
+      <div class="quote-block">
+        <h4><i class="fas fa-camera"></i> Fotos del trabajo</h4>
         ${fotosHtml}
       </div>
-      <div class="notif-quote-actions">
-        ${wa ? `<a class="btn btn-whatsapp" href="${wa}" target="_blank" rel="noopener">
+
+      <div class="quote-detail-actions">
+        ${wa ? `<a class="btn btn-whatsapp btn-block" href="${wa}" target="_blank" rel="noopener">
           <i class="fab fa-whatsapp"></i> Responder por WhatsApp
         </a>` : ''}
-        ${tel ? `<a class="btn btn-call" href="tel:${String(tel).replace(/"/g, '')}">
+        ${tel ? `<a class="btn btn-call btn-block" href="tel:${String(tel).replace(/"/g, '')}">
           <i class="fas fa-phone"></i> Llamar
         </a>` : ''}
       </div>
@@ -2599,6 +2625,89 @@ function renderNotifPresupuestoDetalle(q) {
   `;
 }
 
+function setNotifHeader(mode, title) {
+  const h = document.getElementById('notifHeaderTitle');
+  const back = document.getElementById('notifBackBtn');
+  if (h) h.textContent = title || (mode === 'detail' ? 'Detalle' : 'Notificaciones');
+  if (back) back.style.visibility = mode === 'detail' ? 'visible' : 'hidden';
+}
+
+function volverListaNotificaciones() {
+  const list = document.getElementById('notificationsList');
+  const detail = document.getElementById('notificationDetail');
+  if (list) list.style.display = '';
+  if (detail) {
+    detail.style.display = 'none';
+    detail.innerHTML = '';
+  }
+  setNotifHeader('list', 'Notificaciones');
+  try {
+    history.replaceState({ section: 'notifications' }, '', '#notifications');
+  } catch (e) {}
+}
+
+async function abrirDetallePresupuesto(quoteId, opts) {
+  const detail = document.getElementById('notificationDetail');
+  const list = document.getElementById('notificationsList');
+  if (!detail) return;
+
+  showSection('notifications');
+  setNotifHeader('detail', 'Pedido de presupuesto');
+  if (list) list.style.display = 'none';
+  detail.style.display = 'block';
+  detail.innerHTML = '<p class="notif-loading">Cargando pedido...</p>';
+
+  let q = null;
+  try {
+    q = await getQuoteById(quoteId);
+  } catch (e) {
+    console.warn(e);
+  }
+  if (!q) {
+    detail.innerHTML = '<p class="notif-detail-missing">No se encontró este presupuesto.</p>';
+    return;
+  }
+  detail.innerHTML = renderNotifPresupuestoDetalle(q);
+  if (opts && opts.highlight) {
+    detail.classList.add('notif-highlight');
+    setTimeout(() => detail.classList.remove('notif-highlight'), 2500);
+  }
+  try {
+    history.replaceState({ section: 'notifications' }, '', '#notif/presupuesto/' + encodeURIComponent(quoteId));
+  } catch (e) {}
+}
+
+function abrirDetalleResenaNotif(n) {
+  const detail = document.getElementById('notificationDetail');
+  const list = document.getElementById('notificationsList');
+  if (!detail) return;
+  showSection('notifications');
+  setNotifHeader('detail', 'Nueva reseña');
+  if (list) list.style.display = 'none';
+  detail.style.display = 'block';
+  detail.innerHTML = `
+    <div class="quote-detail-page review-detail-page">
+      <div class="quote-client-card">
+        <div class="quote-client-avatar review-av"><i class="fas fa-star"></i></div>
+        <div class="quote-client-info">
+          <strong>${escaparHtml((n && n.mensaje) || 'Nueva reseña')}</strong>
+          <span class="notif-time">${escaparHtml(formatDateTime((n && n.fecha) || ''))}</span>
+        </div>
+      </div>
+      <div class="quote-block">
+        <h4><i class="fas fa-comment"></i> Detalle</h4>
+        <p>${escaparHtml((n && n.detalle) || 'Sin detalle adicional.')}</p>
+      </div>
+      <button type="button" class="btn btn-secondary btn-block" onclick="volverListaNotificaciones()">
+        <i class="fas fa-arrow-left"></i> Volver a notificaciones
+      </button>
+    </div>
+  `;
+}
+
+window.abrirDetallePresupuesto = abrirDetallePresupuesto;
+window.volverListaNotificaciones = volverListaNotificaciones;
+window.abrirDetalleResenaNotif = abrirDetalleResenaNotif;
 
 async function showNotifications() {
   const user = getCurrentUser();
@@ -2613,11 +2722,20 @@ async function showNotifications() {
   }
 
   const container = document.getElementById('notificationsList');
+  const detail = document.getElementById('notificationDetail');
   if (!container) {
     showToast('No se encontró la sección de notificaciones', 'error');
     return;
   }
-  container.innerHTML = '<p style="text-align:center;color:var(--text-light);">Cargando...</p>';
+
+  // Vista lista
+  if (detail) {
+    detail.style.display = 'none';
+    detail.innerHTML = '';
+  }
+  container.style.display = '';
+  setNotifHeader('list', 'Notificaciones');
+  container.innerHTML = '<p class="notif-loading">Cargando...</p>';
   showSection('notifications');
   try { updatePushStatusUI(); } catch (e) { console.warn(e); }
 
@@ -2637,12 +2755,9 @@ async function showNotifications() {
       return;
     }
 
-    // Presupuestos del profesional + detalle por id si hace falta
     const quotes = await getQuotesForProf(user.id);
     const quotesById = {};
     quotes.forEach(q => { quotesById[q.id] = q; });
-
-    // Completar quotes faltantes referenciados en notifs
     for (const n of notifs) {
       if (n.tipo === 'presupuesto' && n.quoteId && !quotesById[n.quoteId]) {
         const q = await getQuoteById(n.quoteId);
@@ -2651,42 +2766,72 @@ async function showNotifications() {
     }
 
     container.innerHTML = notifs.map(n => {
-      const icon = n.tipo === 'presupuesto' ? 'fa-file-invoice-dollar' : 'fa-star';
-      let body = '';
-      if (n.tipo === 'presupuesto' && n.quoteId) {
-        body = renderNotifPresupuestoDetalle(quotesById[n.quoteId]);
-      } else if (n.tipo === 'resena') {
-        body = `
-          <div class="notif-review-detail">
-            ${n.detalle ? `<p class="notif-review-text">${escaparHtml(n.detalle)}</p>` : ''}
-          </div>
-        `;
+      const isQuote = n.tipo === 'presupuesto';
+      const q = isQuote && n.quoteId ? quotesById[n.quoteId] : null;
+      const icon = isQuote ? 'fa-file-invoice' : 'fa-star';
+      const iconClass = isQuote ? 'ni-quote' : 'ni-review';
+      const title = isQuote ? 'Nuevo presupuesto' : 'Nueva reseña';
+      let subtitle = '';
+      if (isQuote && q) {
+        subtitle = [q.clienteNombre, q.urgencia, q.localidad || q.zona].filter(Boolean).join(' · ');
+      } else if (isQuote) {
+        subtitle = (n.mensaje || 'Pedido de presupuesto').replace(/^.*?te solicitó un presupuesto\s*/i, '') || n.mensaje || '';
+      } else {
+        subtitle = n.detalle ? String(n.detalle).substring(0, 80) : (n.mensaje || '');
       }
+      const time = tiempoRelativoNotif(n.fecha);
+      const unread = n.read ? '' : 'is-unread';
+      const click = isQuote && n.quoteId
+        ? `abrirDetallePresupuesto('${n.quoteId}'); return false;`
+        : `abrirDetalleResenaNotif(${JSON.stringify({ mensaje: n.mensaje || '', detalle: n.detalle || '', fecha: n.fecha || '' }).replace(/'/g, "\\'")}); return false;`;
+
+      // Safer click via data attributes
+      const dataAttrs = isQuote && n.quoteId
+        ? `data-kind="quote" data-id="${escaparHtml(n.quoteId)}"`
+        : `data-kind="review" data-msg="${escaparHtml(n.mensaje || '')}" data-det="${escaparHtml(n.detalle || '')}" data-fecha="${escaparHtml(n.fecha || '')}"`;
+
       return `
-        <article class="notif-item notif-card ${n.read ? '' : 'unread'} ${n.tipo === 'presupuesto' ? 'notif-presupuesto' : 'notif-resena'}"
-          id="${n.tipo === 'presupuesto' && n.quoteId ? 'notif-quote-' + n.quoteId : (n.reviewId ? 'notif-review-' + n.reviewId : 'notif-' + (n.id || ''))}"
-          data-tipo="${n.tipo || ''}" data-quote-id="${n.quoteId || ''}" data-review-id="${n.reviewId || ''}">
-          <div class="notif-card-header">
-            <div class="notif-icon">
-              <i class="fas ${icon}"></i>
-            </div>
-            <div class="notif-card-title">
-              <p class="notif-msg"><strong>${escaparHtml(n.mensaje)}</strong></p>
-              <span class="notif-time">${formatDateTime(n.fecha)}</span>
-            </div>
-          </div>
-          ${body}
-        </article>
+        <button type="button" class="notif-row ${unread} ${isQuote ? 'row-quote' : 'row-review'}"
+          ${dataAttrs}
+          onclick="onNotifRowClick(this); return false;">
+          <span class="notif-row-icon ${iconClass}"><i class="fas ${icon}"></i></span>
+          <span class="notif-row-body">
+            <span class="notif-row-title">${title}</span>
+            <span class="notif-row-sub">${escaparHtml(subtitle)}</span>
+          </span>
+          <span class="notif-row-meta">
+            <span class="notif-row-time">${escaparHtml(time)}</span>
+            ${n.read ? '' : '<span class="notif-row-dot"></span>'}
+          </span>
+        </button>
       `;
     }).join('');
   } catch (err) {
     console.error('Error notificaciones:', err);
     const msg = (err && err.message) ? err.message : 'Error desconocido';
     container.innerHTML = `<p style="text-align:center;color:var(--text-light);">Error al cargar notificaciones.</p>
-      <p style="text-align:center;font-size:0.8rem;color:#c1121f;max-width:420px;margin:0.5rem auto;">${msg}</p>`;
+      <p style="text-align:center;font-size:0.8rem;color:#c1121f;max-width:420px;margin:0.5rem auto;">${escaparHtml(msg)}</p>`;
     showToast('No se pudieron cargar las notificaciones', 'error');
   }
 }
+
+function onNotifRowClick(btn) {
+  if (!btn) return;
+  const kind = btn.getAttribute('data-kind');
+  if (kind === 'quote') {
+    const id = btn.getAttribute('data-id');
+    if (id) abrirDetallePresupuesto(id);
+    return;
+  }
+  abrirDetalleResenaNotif({
+    mensaje: btn.getAttribute('data-msg') || 'Nueva reseña',
+    detalle: btn.getAttribute('data-det') || '',
+    fecha: btn.getAttribute('data-fecha') || ''
+  });
+}
+
+window.onNotifRowClick = onNotifRowClick;
+
 
 // ===== UTILS =====
 function formatDate(dateStr) {
@@ -3486,8 +3631,21 @@ function setupForegroundPush() {
 
 // ===== DEEP LINK DESDE PUSH =====
 function parseNotifDeepLink(hash) {
+  // Query: ?open=presupuesto&id=xxx (desde el SW al abrir de cero)
+  try {
+    const q = new URLSearchParams(window.location.search || '');
+    const open = q.get('open');
+    const id = q.get('id');
+    if (open && id) {
+      return {
+        tipo: open.toLowerCase().startsWith('res') ? 'resena' : 'presupuesto',
+        id: id,
+        fromQuery: true
+      };
+    }
+  } catch (e) {}
+
   const h = (hash || location.hash || '').replace(/^#/, '');
-  // notif/presupuesto/ID  |  notif/resena/ID
   const m = h.match(/^notif\/(presupuesto|resena|reseña)\/([^/?#]+)/i);
   if (m) {
     return {
@@ -3502,22 +3660,13 @@ function parseNotifDeepLink(hash) {
 }
 
 async function abrirNotificacionDesdePush(tipo, id) {
-  if (tipo && id) {
-    const hash = tipo === 'presupuesto'
-      ? '#notif/presupuesto/' + encodeURIComponent(id)
-      : '#notif/resena/' + encodeURIComponent(id);
-    try {
-      history.replaceState({ section: 'notifications' }, '', hash);
-    } catch (e) {}
-    try {
-      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({ tipo, id }));
-    } catch (e) {}
-  }
-
   const user = getCurrentUser();
   if (!user) {
     showSection('login');
     showToast('Iniciá sesión para ver la notificación');
+    try {
+      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({ tipo, id }));
+    } catch (e) {}
     return;
   }
   if (user.tipo !== 'oficio') {
@@ -3525,48 +3674,18 @@ async function abrirNotificacionDesdePush(tipo, id) {
     return;
   }
 
-  await showNotifications();
   try { sessionStorage.removeItem('oficiosya_pending_notif'); } catch (e) {}
 
-  // Esperar a que el DOM pinte
-  setTimeout(() => {
-    let el = null;
-    if (tipo === 'presupuesto' && id) {
-      el = document.getElementById('notif-quote-' + id);
-    } else if ((tipo === 'resena' || tipo === 'reseña') && id) {
-      el = document.getElementById('notif-review-' + id);
-    }
-    if (el) {
-      el.classList.add('notif-highlight');
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setTimeout(() => el.classList.remove('notif-highlight'), 4000);
-    } else if (tipo === 'presupuesto' && id) {
-      // Intentar cargar el presupuesto suelto
-      getQuoteById(id).then((q) => {
-        if (!q) {
-          showToast('No se encontró ese presupuesto', 'error');
-          return;
-        }
-        const container = document.getElementById('notificationsList');
-        if (container) {
-          const html = `<article class="notif-item notif-card notif-presupuesto notif-highlight" id="notif-quote-${id}">
-            <div class="notif-card-header">
-              <div class="notif-icon"><i class="fas fa-file-invoice-dollar"></i></div>
-              <div class="notif-card-title">
-                <p class="notif-msg"><strong>Pedido de presupuesto</strong></p>
-              </div>
-            </div>
-            ${renderNotifPresupuestoDetalle(q)}
-          </article>`;
-          container.insertAdjacentHTML('afterbegin', html);
-          const el2 = document.getElementById('notif-quote-' + id);
-          if (el2) el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      });
-    } else {
-      showToast('Abrimos tus notificaciones');
-    }
-  }, 350);
+  if (tipo === 'presupuesto' && id) {
+    await abrirDetallePresupuesto(id, { highlight: true });
+    return;
+  }
+
+  await showNotifications();
+  if ((tipo === 'resena' || tipo === 'reseña') && id) {
+    // Buscar en lista si hay fila de reseña (detalle genérico)
+    showToast('Abrimos tus notificaciones');
+  }
 }
 
 function procesarDeepLinkNotificacion() {
@@ -3576,6 +3695,16 @@ function procesarDeepLinkNotificacion() {
     const user = getCurrentUser();
     if (user && user.tipo === 'oficio') showNotifications();
     return true;
+  }
+  // Limpiar query para no reabrir en cada refresh
+  if (parsed.fromQuery) {
+    try {
+      const hash =
+        parsed.tipo === 'presupuesto'
+          ? '#notif/presupuesto/' + encodeURIComponent(parsed.id)
+          : '#notif/resena/' + encodeURIComponent(parsed.id);
+      history.replaceState({ section: 'notifications' }, '', location.pathname + hash);
+    } catch (e) {}
   }
   abrirNotificacionDesdePush(parsed.tipo, parsed.id);
   return true;
