@@ -3788,7 +3788,33 @@ function setupPushDeepLinkListeners() {
 }
 
 window.abrirNotificacionDesdePush = abrirNotificacionDesdePush;
+
+/** iPhone: al abrir desde push a veces no hay hash; el SW guarda el destino */
+function pedirPendingNotifAlSW() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then((reg) => {
+    const worker = reg.active || navigator.serviceWorker.controller;
+    if (!worker) return;
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => {
+      const msg = event.data || {};
+      if (msg.type !== 'PENDING_NOTIF' || !msg.pending) return;
+      const p = msg.pending;
+      // Solo si es reciente (< 10 min)
+      if (p.ts && Date.now() - p.ts > 10 * 60 * 1000) return;
+      if (p.tipo === 'presupuesto' && p.quoteId) {
+        abrirNotificacionDesdePush('presupuesto', p.quoteId);
+      } else if ((p.tipo === 'resena' || p.tipo === 'reseña') && p.reviewId) {
+        abrirNotificacionDesdePush('resena', p.reviewId);
+      }
+    };
+    worker.postMessage({ type: 'POP_PENDING_NOTIF' }, [channel.port2]);
+  }).catch(() => {});
+}
+
+
 window.procesarDeepLinkNotificacion = procesarDeepLinkNotificacion;
+window.pedirPendingNotifAlSW = pedirPendingNotifAlSW;
 
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3796,4 +3822,6 @@ document.addEventListener('DOMContentLoaded', () => {
   try { setupPushDeepLinkListeners(); } catch (e) { console.warn(e); }
   try { setupFcmTokenRefresh(); } catch (e) { console.warn(e); }
   setTimeout(() => { try { procesarDeepLinkNotificacion(); } catch (e) {} }, 900);
+  // iOS: recuperar destino del push si abrió en el inicio
+  setTimeout(() => { try { pedirPendingNotifAlSW(); } catch (e) {} }, 1200);
 });
