@@ -37,6 +37,10 @@ async function enviarPushAlUsuario(userId, title, body, data) {
       deepPath = "#notif/resena/" + encodeURIComponent(reviewId);
     }
 
+    let tag = String((data && data.tag) || tipo || "oficiosya");
+    if (quoteId) tag = "quote-" + quoteId;
+    else if (reviewId) tag = "review-" + reviewId;
+
     const dataPayload = {
       title: String(title || "Oficios YA!"),
       body: String(body || ""),
@@ -44,9 +48,11 @@ async function enviarPushAlUsuario(userId, title, body, data) {
       tipo: String(tipo),
       quoteId: String(quoteId),
       reviewId: String(reviewId),
-      tag: String((data && data.tag) || tipo || "oficiosya"),
+      tag: tag,
     };
 
+    // notification + data: mejor entrega en iPhone (data-only a veces no llega
+    // con la app cerrada). El SW no vuelve a mostrar si ya hay notification.
     const message = {
       tokens: tokens,
       notification: {
@@ -61,11 +67,9 @@ async function enviarPushAlUsuario(userId, title, body, data) {
           body: String(body || ""),
           icon: "icon-192.png",
           badge: "icon-192.png",
-          requireInteraction: true,
+          tag: tag,
           data: dataPayload,
         },
-        // No poner fcmOptions.link con "/" : en GitHub Pages abre la raíz del usuario
-        // y muestra "There isn't a GitHub Pages site here". El SW maneja el clic.
       },
     };
 
@@ -104,9 +108,14 @@ async function enviarPushAlUsuario(userId, title, body, data) {
       }
     });
     if (invalid.length) {
-      await db.collection("users").doc(userId).update({
-        fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalid),
-      });
+      console.log("Limpiando tokens inválidos:", invalid.length);
+      try {
+        await db.collection("users").doc(userId).update({
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalid),
+        });
+      } catch (e) {
+        console.warn("No se pudieron limpiar tokens:", e);
+      }
     }
 
     return {
