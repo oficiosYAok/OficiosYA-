@@ -667,30 +667,33 @@
 
   <!-- NOTIFICATIONS SECTION -->
   <section id="notifications" class="section">
-    <div class="container">
-      <h2 class="section-title"><i class="fas fa-bell"></i> Notificaciones</h2>
-      
-      <div class="push-enable-bar" id="pushEnableBar">
-        <div class="push-enable-row">
-          <div class="push-enable-text">
-            <strong id="pushStatusTitle">Notificaciones push</strong>
-            <p id="pushStatusDesc">Recibí avisos de reseñas y presupuestos aunque la app esté cerrada.</p>
+    <div class="notif-shell">
+      <header class="notif-header-bar">
+        <button type="button" class="notif-back-btn" id="notifBackBtn" style="visibility:hidden;" onclick="volverListaNotificaciones(); return false;" aria-label="Volver">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <h2 id="notifHeaderTitle">Notificaciones</h2>
+        <span class="notif-header-icon"><i class="fas fa-bell"></i></span>
+      </header>
+
+      <div class="container notif-body">
+        <div class="push-enable-bar" id="pushEnableBar" style="display:none;">
+          <div class="push-enable-row">
+            <div class="push-enable-text">
+              <strong id="pushStatusTitle">Activá las notificaciones</strong>
+              <p id="pushStatusDesc">Así te enterás de reseñas y presupuestos aunque la app esté cerrada.</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" id="btnActivarPush" onclick="activarNotificacionesPush(); return false;">
+              <i class="fas fa-bell"></i> <span id="btnActivarPushLabel">Activar</span>
+            </button>
           </div>
-          <button type="button" class="btn btn-primary btn-sm" id="btnActivarPush" onclick="activarNotificacionesPush(); return false;">
-            <i class="fas fa-bell"></i> <span id="btnActivarPushLabel">Activar</span>
-          </button>
         </div>
-        <div class="push-test-row" style="margin-top:0.65rem;display:flex;flex-wrap:wrap;gap:0.5rem;">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="probarNotificacionLocal(); return false;">
-            <i class="fas fa-mobile-alt"></i> Probar aviso local
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="probarNotificacionPushFCM(); return false;">
-            <i class="fas fa-cloud"></i> Probar push Firebase
-          </button>
-        </div>
-      </div>
-      <div id="notificationsList" class="notifications-list">
-        <!-- Notificaciones dinámicas -->
+
+        <!-- Lista compacta -->
+        <div id="notificationsList" class="notifications-list notif-inbox"></div>
+
+        <!-- Detalle presupuesto / reseña -->
+        <div id="notificationDetail" class="notification-detail" style="display:none;"></div>
       </div>
     </div>
   </section>
@@ -855,6 +858,23 @@
       <input type="text" id="supportInput" placeholder="Escribí tu mensaje..." autocomplete="off">
       <button type="submit"><i class="fas fa-paper-plane"></i></button>
     </form>
+  </div>
+
+    <!-- Modal: pedir notificaciones al instalar / primer uso -->
+  <div id="pushPermissionModal" class="modal" style="display:none;" aria-hidden="true">
+    <div class="modal-content push-perm-modal" onclick="event.stopPropagation()">
+      <div class="push-perm-icon"><i class="fas fa-bell"></i></div>
+      <h3>¿Activar notificaciones?</h3>
+      <p>Te avisamos cuando un cliente deje una reseña o pida un presupuesto, aunque tengas la app cerrada.</p>
+      <div class="push-perm-actions">
+        <button type="button" class="btn btn-primary btn-block" onclick="aceptarPushDesdeModal(); return false;">
+          <i class="fas fa-check"></i> Sí, activar
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" onclick="rechazarPushDesdeModal(); return false;">
+          Ahora no
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast notifications -->
