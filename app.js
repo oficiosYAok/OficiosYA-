@@ -492,8 +492,10 @@ async function init() {
   setMaxFechaNacimiento();
   cargarCredencialesRecordadas();
 
-  // Historial inicial / deep link a perfil
+  // Historial inicial / deep links (perfil, notificaciones push)
   const rawHash = (location.hash || '#home').replace(/^#/, '') || 'home';
+  const notifLink = parseNotifDeepLink('#' + rawHash);
+
   if (rawHash.startsWith('profile/')) {
     const profId = decodeURIComponent(rawHash.slice('profile/'.length));
     try {
@@ -501,6 +503,24 @@ async function init() {
     } catch (err) { /* ignore */ }
     showSection('profile', true);
     if (profId) verPerfil(profId);
+  } else if (notifLink && notifLink.tipo && notifLink.tipo !== 'list') {
+    // NO pisar el hash con #home (antes eso mandaba al inicio al tocar el push)
+    try {
+      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({
+        tipo: notifLink.tipo,
+        id: notifLink.id
+      }));
+    } catch (e) {}
+    try {
+      history.replaceState({ section: 'notifications' }, '', '#' + rawHash);
+    } catch (err) { /* ignore */ }
+    // Mostrar notificaciones cuando haya sesión (onAuthStateChanged / más abajo)
+    showSection('notifications', true);
+  } else if (notifLink && notifLink.tipo === 'list') {
+    try {
+      history.replaceState({ section: 'notifications' }, '', '#notifications');
+    } catch (err) { /* ignore */ }
+    showSection('notifications', true);
   } else {
     const validInitial = document.getElementById(rawHash) ? rawHash : 'home';
     try {
@@ -530,7 +550,21 @@ async function init() {
           currentUserCache = { ...profile, id: firebaseUser.uid, email: firebaseUser.email };
           sessionStorage.setItem('oficiosya_uid', firebaseUser.uid);
           sincronizarPushTrasLogin(firebaseUser.uid);
-          if (currentUserCache.tipo === 'oficio') programarPreguntaPush();
+          if (currentUserCache.tipo === 'oficio') {
+            programarPreguntaPush();
+            setTimeout(() => {
+              try {
+                const pending = sessionStorage.getItem('oficiosya_pending_notif');
+                if (pending) {
+                  const p = JSON.parse(pending);
+                  sessionStorage.removeItem('oficiosya_pending_notif');
+                  abrirNotificacionDesdePush(p.tipo, p.id);
+                } else {
+                  procesarDeepLinkNotificacion();
+                }
+              } catch (e) { console.warn(e); }
+            }, 500);
+          }
         } else if (!authBusy) {
           // Perfil aún no existe (registro a medias): no forzar logout visual
           console.warn('Perfil no encontrado todavía para', firebaseUser.uid);
@@ -3461,14 +3495,22 @@ function parseNotifDeepLink(hash) {
 }
 
 async function abrirNotificacionDesdePush(tipo, id) {
+  if (tipo && id) {
+    const hash = tipo === 'presupuesto'
+      ? '#notif/presupuesto/' + encodeURIComponent(id)
+      : '#notif/resena/' + encodeURIComponent(id);
+    try {
+      history.replaceState({ section: 'notifications' }, '', hash);
+    } catch (e) {}
+    try {
+      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({ tipo, id }));
+    } catch (e) {}
+  }
+
   const user = getCurrentUser();
   if (!user) {
     showSection('login');
     showToast('Iniciá sesión para ver la notificación');
-    // guardar pendiente
-    try {
-      sessionStorage.setItem('oficiosya_pending_notif', JSON.stringify({ tipo, id }));
-    } catch (e) {}
     return;
   }
   if (user.tipo !== 'oficio') {
@@ -3477,6 +3519,7 @@ async function abrirNotificacionDesdePush(tipo, id) {
   }
 
   await showNotifications();
+  try { sessionStorage.removeItem('oficiosya_pending_notif'); } catch (e) {}
 
   // Esperar a que el DOM pinte
   setTimeout(() => {
@@ -3537,12 +3580,15 @@ function setupPushDeepLinkListeners() {
     navigator.serviceWorker.addEventListener('message', (event) => {
       const d = event.data || {};
       if (d.type !== 'OPEN_NOTIF') return;
+      console.log('OPEN_NOTIF', d);
       if (d.tipo === 'presupuesto' && d.quoteId) {
-        history.replaceState({ section: 'notifications' }, '', '#notif/presupuesto/' + encodeURIComponent(d.quoteId));
         abrirNotificacionDesdePush('presupuesto', d.quoteId);
       } else if ((d.tipo === 'resena' || d.tipo === 'reseña') && d.reviewId) {
-        history.replaceState({ section: 'notifications' }, '', '#notif/resena/' + encodeURIComponent(d.reviewId));
         abrirNotificacionDesdePush('resena', d.reviewId);
+      } else if (d.url && String(d.url).indexOf('notif/') >= 0) {
+        const parsed = parseNotifDeepLink(String(d.url));
+        if (parsed && parsed.id) abrirNotificacionDesdePush(parsed.tipo, parsed.id);
+        else showNotifications();
       } else {
         showNotifications();
       }
