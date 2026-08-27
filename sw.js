@@ -1,10 +1,11 @@
+
 /* Service Worker — Oficios YA! PWA + Firebase Cloud Messaging */
 
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v17';
+const CACHE_NAME = 'oficiosya-v18';
 const PRECACHE = [
   './',
   './index.html',
@@ -76,29 +77,31 @@ try {
     const messaging = firebase.messaging();
 
     messaging.onBackgroundMessage((payload) => {
-      const title =
-        (payload.notification && payload.notification.title) ||
-        (payload.data && payload.data.title) ||
-        'Oficios YA!';
-      const body =
-        (payload.notification && payload.notification.body) ||
-        (payload.data && payload.data.body) ||
-        'Tenés una nueva notificación';
-      const data = Object.assign({}, payload.data || {});
-      if (payload.notification) {
-        if (!data.title && payload.notification.title) data.title = payload.notification.title;
-        if (!data.body && payload.notification.body) data.body = payload.notification.body;
+      // Si FCM ya trae "notification", el sistema muestra UNA sola.
+      // No volver a llamar showNotification (evita el duplicado).
+      if (payload.notification && payload.notification.title) {
+        console.log('FCM: aviso del sistema (sin duplicar en SW)', payload.data);
+        return;
       }
-      const options = {
+
+      // Solo mensajes data-only: los mostramos nosotros con deep link completo
+      const data = Object.assign({}, payload.data || {});
+      const title = data.title || 'Oficios YA!';
+      const body = data.body || 'Tenés una nueva notificación';
+      let tag = data.tag || 'oficiosya';
+      if (data.quoteId) tag = 'quote-' + data.quoteId;
+      else if (data.reviewId) tag = 'review-' + data.reviewId;
+
+      return self.registration.showNotification(title, {
         body: body,
         icon: './icon-192.png',
         badge: './icon-192.png',
         data: data,
-        tag: data.tag || 'oficiosya',
-        renotify: true
-      };
-      return self.registration.showNotification(title, options);
+        tag: tag,
+        renotify: false
+      });
     });
+
   }
 } catch (err) {
   console.warn('FCM SW:', err);
