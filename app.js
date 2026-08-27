@@ -3453,13 +3453,20 @@ function setupForegroundPush() {
         (payload.data && payload.data.body) ||
         '';
       showToast((title + (body ? ': ' + body : '')).substring(0, 120));
-      if (Notification.permission === 'granted') {
+      // Solo banner del sistema si la app está en segundo plano/minimizada
+      // (si está abierta, alcanza el toast; evita sensación de duplicado)
+      if (Notification.permission === 'granted' && document.hidden) {
         navigator.serviceWorker.ready.then((reg) => {
+          const d = payload.data || {};
+          let tag = d.tag || 'oficiosya-fg';
+          if (d.quoteId) tag = 'quote-' + d.quoteId;
+          else if (d.reviewId) tag = 'review-' + d.reviewId;
           reg.showNotification(title, {
             body: body,
             icon: './icon-192.png',
-            data: payload.data || {},
-            tag: (payload.data && payload.data.tag) || 'oficiosya-fg'
+            data: d,
+            tag: tag,
+            renotify: false
           });
         }).catch(() => {});
       }
