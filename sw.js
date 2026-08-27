@@ -5,7 +5,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v20';
+const CACHE_NAME = 'oficiosya-v21';
 const PRECACHE = [
   './',
   './index.html',
@@ -68,6 +68,72 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+
+/* ===== Deep link pendiente (iOS a veces abre sin data en el click) ===== */
+const PENDING_CACHE = 'oficiosya-pending-v1';
+const PENDING_URL = '/__pending_notif__';
+
+async function savePendingNotif(data) {
+  try {
+    const cache = await caches.open(PENDING_CACHE);
+    const body = JSON.stringify({
+      tipo: data.tipo || '',
+      quoteId: data.quoteId || '',
+      reviewId: data.reviewId || '',
+      url: data.url || '',
+      ts: Date.now()
+    });
+    await cache.put(PENDING_URL, new Response(body, {
+      headers: { 'Content-Type': 'application/json' }
+    }));
+  } catch (e) {
+    console.warn('savePendingNotif', e);
+  }
+}
+
+async function readPendingNotif() {
+  try {
+    const cache = await caches.open(PENDING_CACHE);
+    const res = await cache.match(PENDING_URL);
+    if (!res) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function clearPendingNotif() {
+  try {
+    const cache = await caches.open(PENDING_CACHE);
+    await cache.delete(PENDING_URL);
+  } catch (e) {}
+}
+
+function buildNotifTarget(d) {
+  const tipo = (d && d.tipo) || '';
+  const quoteId = (d && d.quoteId) || '';
+  const reviewId = (d && d.reviewId) || '';
+  let hash = '#notifications';
+  let query = '';
+  if (tipo === 'presupuesto' && quoteId) {
+    hash = '#notif/presupuesto/' + encodeURIComponent(quoteId);
+    query = '?open=presupuesto&id=' + encodeURIComponent(quoteId);
+  } else if ((tipo === 'resena' || tipo === 'reseña') && reviewId) {
+    hash = '#notif/resena/' + encodeURIComponent(reviewId);
+    query = '?open=resena&id=' + encodeURIComponent(reviewId);
+  } else if (d && d.url && String(d.url).indexOf('#') >= 0) {
+    hash = '#' + String(d.url).split('#').pop();
+  }
+  const scope = self.registration.scope.replace(/\/?$/, '/');
+  return {
+    hash: hash,
+    targetUrl: scope + 'index.html' + query + hash,
+    tipo: tipo,
+    quoteId: quoteId,
+    reviewId: reviewId
+  };
+}
+
 try {
   const cfg = self.__FIREBASE_CONFIG__;
   if (cfg && cfg.apiKey && cfg.apiKey !== 'TU_API_KEY') {
@@ -76,27 +142,28 @@ try {
     }
     const messaging = firebase.messaging();
 
-    messaging.onBackgroundMessage((payload) => {
+    messaging.onBackgroundMessage(async (payload) => {
       const data = Object.assign({}, payload.data || {});
       if (payload.notification) {
         if (!data.title) data.title = payload.notification.title || '';
         if (!data.body) data.body = payload.notification.body || '';
       }
 
-      // Si FCM ya mostró el aviso del sistema, NO duplicar.
-      // (en iOS el data igual viaja en el push para el click cuando está disponible)
-      if (payload.notification && payload.notification.title) {
-        console.log('FCM system notification, skip SW duplicate', data);
-        return;
-      }
+      // Guardar siempre el destino (iOS suele abrir sin data en el click)
+      await savePendingNotif(data);
 
-      const title = data.title || 'Oficios YA!';
-      const body = data.body || 'Tenés una nueva notificación';
+      const title = data.title || (payload.notification && payload.notification.title) || 'Oficios YA!';
+      const body = data.body || (payload.notification && payload.notification.body) || 'Tenés una nueva notificación';
       let tag = data.tag || 'oficiosya';
       if (data.quoteId) tag = 'quote-' + data.quoteId;
       else if (data.reviewId) tag = 'review-' + data.reviewId;
 
-      return self.registration.showNotification(title, {
+      // Si el sistema YA muestra notification, no duplicar
+      if (payload.notification && payload.notification.title) {
+        return;
+      }
+
+      await self.registration.showNotification(title, {
         body: body,
         icon: './icon-192.png',
         badge: './icon-192.png',
@@ -105,7 +172,6 @@ try {
         renotify: false
       });
     });
-
   }
 } catch (err) {
   console.warn('FCM SW:', err);
@@ -113,42 +179,24 @@ try {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const d = event.notification.data || {};
-
-  let tipo = d.tipo || '';
-  let quoteId = d.quoteId || '';
-  let reviewId = d.reviewId || '';
-
-  // Hash de la app
-  let hash = '#notifications';
-  if (tipo === 'presupuesto' && quoteId) {
-    hash = '#notif/presupuesto/' + encodeURIComponent(quoteId);
-  } else if ((tipo === 'resena' || tipo === 'reseña') && reviewId) {
-    hash = '#notif/resena/' + encodeURIComponent(reviewId);
-  } else if (d.url && String(d.url).indexOf('#') >= 0) {
-    hash = '#' + String(d.url).split('#').pop();
-  }
-
-  // Query extra (más fiable en algunos móviles al abrir de cero)
-  let query = '';
-  if (tipo === 'presupuesto' && quoteId) {
-    query = '?open=presupuesto&id=' + encodeURIComponent(quoteId);
-  } else if ((tipo === 'resena' || tipo === 'reseña') && reviewId) {
-    query = '?open=resena&id=' + encodeURIComponent(reviewId);
-  }
-
-  const scope = self.registration.scope.replace(/\/?$/, '/');
-  const targetUrl = scope + 'index.html' + query + hash;
-
-  const payload = {
-    type: 'OPEN_NOTIF',
-    url: hash,
-    tipo: tipo,
-    quoteId: quoteId,
-    reviewId: reviewId
-  };
-
   event.waitUntil((async () => {
+    let d = event.notification.data || {};
+    // iOS: data vacío → usar pending guardado al recibir el push
+    if (!d.quoteId && !d.reviewId && !d.tipo) {
+      const pending = await readPendingNotif();
+      if (pending) d = pending;
+    }
+    await clearPendingNotif();
+
+    const built = buildNotifTarget(d);
+    const payload = {
+      type: 'OPEN_NOTIF',
+      url: built.hash,
+      tipo: built.tipo,
+      quoteId: built.quoteId,
+      reviewId: built.reviewId
+    };
+
     const list = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     let client = null;
     for (const c of list) {
@@ -161,12 +209,28 @@ self.addEventListener('notificationclick', (event) => {
       await client.focus();
       try { client.postMessage(payload); } catch (e) {}
       try {
-        if (client.navigate) await client.navigate(targetUrl);
+        if (client.navigate) await client.navigate(built.targetUrl);
       } catch (e2) {}
       return;
     }
     if (clients.openWindow) {
-      await clients.openWindow(targetUrl);
+      await clients.openWindow(built.targetUrl);
     }
   })());
+});
+
+// La página pide el deep link pendiente (arranque en frío en iPhone)
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'POP_PENDING_NOTIF') {
+    event.waitUntil((async () => {
+      const pending = await readPendingNotif();
+      if (pending) await clearPendingNotif();
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({ type: 'PENDING_NOTIF', pending: pending });
+      } else if (event.source && event.source.postMessage) {
+        event.source.postMessage({ type: 'PENDING_NOTIF', pending: pending });
+      }
+    })());
+  }
 });
