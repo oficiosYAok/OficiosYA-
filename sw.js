@@ -5,7 +5,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v18';
+const CACHE_NAME = 'oficiosya-v20';
 const PRECACHE = [
   './',
   './index.html',
@@ -77,15 +77,19 @@ try {
     const messaging = firebase.messaging();
 
     messaging.onBackgroundMessage((payload) => {
-      // Si FCM ya trae "notification", el sistema muestra UNA sola.
-      // No volver a llamar showNotification (evita el duplicado).
+      const data = Object.assign({}, payload.data || {});
+      if (payload.notification) {
+        if (!data.title) data.title = payload.notification.title || '';
+        if (!data.body) data.body = payload.notification.body || '';
+      }
+
+      // Si FCM ya mostró el aviso del sistema, NO duplicar.
+      // (en iOS el data igual viaja en el push para el click cuando está disponible)
       if (payload.notification && payload.notification.title) {
-        console.log('FCM: aviso del sistema (sin duplicar en SW)', payload.data);
+        console.log('FCM system notification, skip SW duplicate', data);
         return;
       }
 
-      // Solo mensajes data-only: los mostramos nosotros con deep link completo
-      const data = Object.assign({}, payload.data || {});
       const title = data.title || 'Oficios YA!';
       const body = data.body || 'Tenés una nueva notificación';
       let tag = data.tag || 'oficiosya';
@@ -111,32 +115,41 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const d = event.notification.data || {};
 
-  // Hash relativo (NO usar "/" al inicio: en GitHub Pages rompería el path del repo)
+  let tipo = d.tipo || '';
+  let quoteId = d.quoteId || '';
+  let reviewId = d.reviewId || '';
+
+  // Hash de la app
   let hash = '#notifications';
-  if (d.tipo === 'presupuesto' && d.quoteId) {
-    hash = '#notif/presupuesto/' + encodeURIComponent(d.quoteId);
-  } else if ((d.tipo === 'resena' || d.tipo === 'reseña') && d.reviewId) {
-    hash = '#notif/resena/' + encodeURIComponent(d.reviewId);
-  } else if (d.url) {
-    const u = String(d.url);
-    if (u.indexOf('#') >= 0) hash = '#' + u.split('#').pop();
-    else if (u.charAt(0) === '#') hash = u;
+  if (tipo === 'presupuesto' && quoteId) {
+    hash = '#notif/presupuesto/' + encodeURIComponent(quoteId);
+  } else if ((tipo === 'resena' || tipo === 'reseña') && reviewId) {
+    hash = '#notif/resena/' + encodeURIComponent(reviewId);
+  } else if (d.url && String(d.url).indexOf('#') >= 0) {
+    hash = '#' + String(d.url).split('#').pop();
   }
 
-  const scope = self.registration.scope; // ej: https://user.github.io/Repo/
-  const targetUrl = scope.replace(/\/?$/, '/') + hash.replace(/^#/, '#');
+  // Query extra (más fiable en algunos móviles al abrir de cero)
+  let query = '';
+  if (tipo === 'presupuesto' && quoteId) {
+    query = '?open=presupuesto&id=' + encodeURIComponent(quoteId);
+  } else if ((tipo === 'resena' || tipo === 'reseña') && reviewId) {
+    query = '?open=resena&id=' + encodeURIComponent(reviewId);
+  }
+
+  const scope = self.registration.scope.replace(/\/?$/, '/');
+  const targetUrl = scope + 'index.html' + query + hash;
 
   const payload = {
     type: 'OPEN_NOTIF',
     url: hash,
-    tipo: d.tipo || '',
-    quoteId: d.quoteId || '',
-    reviewId: d.reviewId || ''
+    tipo: tipo,
+    quoteId: quoteId,
+    reviewId: reviewId
   };
 
   event.waitUntil((async () => {
     const list = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // Preferir una ventana existente de este origen/scope
     let client = null;
     for (const c of list) {
       if (c.url && c.url.indexOf(self.location.origin) === 0) {
@@ -148,11 +161,8 @@ self.addEventListener('notificationclick', (event) => {
       await client.focus();
       try { client.postMessage(payload); } catch (e) {}
       try {
-        const base = client.url.split('#')[0];
-        if (client.navigate) await client.navigate(base + hash);
-      } catch (e2) {
-        // Si navigate falla, el postMessage igual debería abrir el detalle
-      }
+        if (client.navigate) await client.navigate(targetUrl);
+      } catch (e2) {}
       return;
     }
     if (clients.openWindow) {
