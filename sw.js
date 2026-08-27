@@ -1,11 +1,10 @@
-
 /* Service Worker — Oficios YA! PWA + Firebase Cloud Messaging */
 
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v16';
+const CACHE_NAME = 'oficiosya-v17';
 const PRECACHE = [
   './',
   './index.html',
@@ -132,25 +131,29 @@ self.addEventListener('notificationclick', (event) => {
     reviewId: d.reviewId || ''
   };
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const client of list) {
-        if ('focus' in client) {
-          client.focus();
-          try { client.postMessage(payload); } catch (e) {}
-          // Cambiar solo el hash si ya estamos en la app
-          try {
-            if (client.navigate) {
-              const base = client.url.split('#')[0];
-              client.navigate(base + hash);
-            }
-          } catch (e2) {}
-          return;
-        }
+  event.waitUntil((async () => {
+    const list = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // Preferir una ventana existente de este origen/scope
+    let client = null;
+    for (const c of list) {
+      if (c.url && c.url.indexOf(self.location.origin) === 0) {
+        client = c;
+        break;
       }
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+    }
+    if (client) {
+      await client.focus();
+      try { client.postMessage(payload); } catch (e) {}
+      try {
+        const base = client.url.split('#')[0];
+        if (client.navigate) await client.navigate(base + hash);
+      } catch (e2) {
+        // Si navigate falla, el postMessage igual debería abrir el detalle
       }
-    })
-  );
+      return;
+    }
+    if (clients.openWindow) {
+      await clients.openWindow(targetUrl);
+    }
+  })());
 });
