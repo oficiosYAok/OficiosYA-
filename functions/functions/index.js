@@ -1,5 +1,4 @@
-
-/**
+**
  * Cloud Functions — Oficios YA!
  * Notificaciones in-app + Push (FCM) con deep link
  * Región: southamerica-east1
@@ -12,6 +11,11 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
 const regional = functions.region("southamerica-east1");
+
+// URL pública de la app SIN barra final (mejorá el click en iPhone).
+// Ej: "https://tuusuario.github.io/OficiosYA--main"
+// o "https://oficiosya-18909.web.app"
+const APP_PUBLIC_URL = process.env.APP_PUBLIC_URL || "";
 
 async function enviarPushAlUsuario(userId, title, body, data) {
   try {
@@ -70,6 +74,19 @@ async function enviarPushAlUsuario(userId, title, body, data) {
           tag: tag,
           data: dataPayload,
         },
+        fcmOptions: APP_PUBLIC_URL
+          ? {
+              link:
+                APP_PUBLIC_URL.replace(/\/$/, "") +
+                "/index.html" +
+                (tipo === "presupuesto" && quoteId
+                  ? "?open=presupuesto&id=" + encodeURIComponent(quoteId)
+                  : tipo === "resena" && reviewId
+                    ? "?open=resena&id=" + encodeURIComponent(reviewId)
+                    : "") +
+                deepPath,
+            }
+          : undefined,
       },
     };
 
