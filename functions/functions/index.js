@@ -15,7 +15,7 @@ const regional = functions.region("southamerica-east1");
 // URL pública de la app SIN barra final (mejorá el click en iPhone).
 // Ej: "https://tuusuario.github.io/OficiosYA--main"
 // o "https://oficiosya-18909.web.app"
-const APP_PUBLIC_URL = https:/oficiosyaok.github.io/OficiosYA;
+const APP_PUBLIC_URL = https:/oficiosyaok.github.io/OficiosYA-/#home;
 
 async function enviarPushAlUsuario(userId, title, body, data) {
   try {
