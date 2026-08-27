@@ -5,7 +5,7 @@ importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
 importScripts('./firebase-sw-config.js');
 
-const CACHE_NAME = 'oficiosya-v15';
+const CACHE_NAME = 'oficiosya-v16';
 const PRECACHE = [
   './',
   './index.html',
@@ -108,19 +108,25 @@ try {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const d = event.notification.data || {};
-  let target = d.url || './#notifications';
-  // Normalizar deep link
+
+  // Hash relativo (NO usar "/" al inicio: en GitHub Pages rompería el path del repo)
+  let hash = '#notifications';
   if (d.tipo === 'presupuesto' && d.quoteId) {
-    target = './#notif/presupuesto/' + encodeURIComponent(d.quoteId);
+    hash = '#notif/presupuesto/' + encodeURIComponent(d.quoteId);
   } else if ((d.tipo === 'resena' || d.tipo === 'reseña') && d.reviewId) {
-    target = './#notif/resena/' + encodeURIComponent(d.reviewId);
-  } else if (target && !target.startsWith('./') && !target.startsWith('http') && target.startsWith('#')) {
-    target = './' + target;
+    hash = '#notif/resena/' + encodeURIComponent(d.reviewId);
+  } else if (d.url) {
+    const u = String(d.url);
+    if (u.indexOf('#') >= 0) hash = '#' + u.split('#').pop();
+    else if (u.charAt(0) === '#') hash = u;
   }
+
+  const scope = self.registration.scope; // ej: https://user.github.io/Repo/
+  const targetUrl = scope.replace(/\/?$/, '/') + hash.replace(/^#/, '#');
 
   const payload = {
     type: 'OPEN_NOTIF',
-    url: target,
+    url: hash,
     tipo: d.tipo || '',
     quoteId: d.quoteId || '',
     reviewId: d.reviewId || ''
@@ -131,16 +137,19 @@ self.addEventListener('notificationclick', (event) => {
       for (const client of list) {
         if ('focus' in client) {
           client.focus();
-          client.postMessage(payload);
+          try { client.postMessage(payload); } catch (e) {}
+          // Cambiar solo el hash si ya estamos en la app
           try {
-            const abs = new URL(target, self.registration.scope).href;
-            if (client.navigate) client.navigate(abs);
-          } catch (e) {}
+            if (client.navigate) {
+              const base = client.url.split('#')[0];
+              client.navigate(base + hash);
+            }
+          } catch (e2) {}
           return;
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(new URL(target, self.registration.scope).href);
+        return clients.openWindow(targetUrl);
       }
     })
   );
