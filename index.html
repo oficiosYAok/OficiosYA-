@@ -814,16 +814,29 @@
 
   <!-- Soporte técnico: burbuja + chat -->
   <!-- Barra inferior móvil -->
-  <nav class="bottom-nav" id="bottomNav" aria-label="Navegación principal">
-    <button type="button" class="bottom-nav-item active" data-nav="home" onclick="navBottom('home')" aria-label="Inicio" title="Inicio">
-      <i class="fas fa-home"></i>
-    </button>
-    <button type="button" class="bottom-nav-item" data-nav="search" onclick="navBottom('search')" aria-label="Buscar" title="Buscar">
-      <i class="fas fa-search"></i>
-    </button>
-    <button type="button" class="bottom-nav-item" data-nav="profile" onclick="navBottom('profile')" aria-label="Perfil" title="Perfil">
-      <i class="fas fa-user"></i>
-    </button>
+    <nav class="bottom-nav" id="bottomNav" aria-label="Navegación principal">
+    <div class="bottom-nav-inner">
+      <button type="button" class="bottom-nav-item active" data-nav="home" onclick="navBottom('home')" aria-label="Inicio" title="Inicio">
+        <span class="bn-icon"><i class="fas fa-home"></i></span>
+        <span class="bn-label">Inicio</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-nav="search" onclick="navBottom('search')" aria-label="Buscar" title="Buscar">
+        <span class="bn-icon"><i class="fas fa-search"></i></span>
+        <span class="bn-label">Buscar</span>
+      </button>
+      <button type="button" class="bottom-nav-item bn-notif" data-nav="notifications" onclick="navBottom('notifications')" aria-label="Notificaciones" title="Notificaciones">
+        <span class="bn-icon">
+          <i class="fas fa-bell"></i>
+          <span class="bn-badge" id="notifBadgeBottom" style="display:none;">0</span>
+        </span>
+        <span class="bn-label">Avisos</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-nav="profile" onclick="navBottom('profile')" aria-label="Perfil" title="Perfil">
+        <span class="bn-icon"><i class="fas fa-user"></i></span>
+        <span class="bn-label">Perfil</span>
+      </button>
+      <span class="bottom-nav-indicator" id="bottomNavIndicator" aria-hidden="true"></span>
+    </div>
   </nav>
 
   <div id="supportBubble" class="support-bubble" onclick="toggleSupportChat()" title="Soporte técnico">
