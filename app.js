@@ -1002,6 +1002,14 @@ function updateNav() {
   const navMyProfileLink = document.getElementById('navMyProfileLink');
 
   closeUserMenu();
+  // Campana del menú inferior: solo profesionales
+  try {
+    const showBell = !!(user && user.tipo === 'oficio');
+    document.querySelectorAll('.bn-notif').forEach(el => {
+      el.style.display = showBell ? '' : 'none';
+    });
+  } catch (e) {}
+
 
   if (user) {
     if (navRegister) navRegister.style.display = 'none';
@@ -1159,19 +1167,38 @@ window.guardarCuenta = guardarCuenta;
 
 async function updateNotifBadge() {
   const user = getCurrentUser();
-  if (!user || user.tipo !== 'oficio' || !firebaseReady) return;
+  const badges = [
+    document.getElementById('notifBadge'),
+    document.getElementById('notifBadgeBottom')
+  ].filter(Boolean);
+
+  const hideAll = () => {
+    badges.forEach(b => { b.style.display = 'none'; b.textContent = '0'; });
+    document.querySelectorAll('.bn-notif').forEach(el => el.classList.remove('has-unread'));
+  };
+
+  if (!user || user.tipo !== 'oficio' || !firebaseReady) {
+    hideAll();
+    return;
+  }
 
   try {
     const notifs = await getNotifications(user.id);
     const unread = notifs.filter(n => !n.read).length;
-    const badge = document.getElementById('notifBadge');
-    if (!badge) return;
-    if (unread > 0) {
-      badge.style.display = 'flex';
-      badge.textContent = unread > 9 ? '9+' : unread;
-    } else {
-      badge.style.display = 'none';
-    }
+    const text = unread > 9 ? '9+' : String(unread);
+    badges.forEach(b => {
+      if (unread > 0) {
+        b.style.display = 'flex';
+        b.textContent = text;
+        b.classList.add('bn-badge-pulse');
+      } else {
+        b.style.display = 'none';
+        b.classList.remove('bn-badge-pulse');
+      }
+    });
+    document.querySelectorAll('.bn-notif').forEach(el => {
+      el.classList.toggle('has-unread', unread > 0);
+    });
   } catch (e) {
     console.warn(e);
   }
@@ -3159,23 +3186,55 @@ function actualizarBarraInferior(sectionId) {
   if (!bar) return;
   let active = 'home';
   if (sectionId === 'search') active = 'search';
-  else if (['profile', 'myProfile', 'editAccount', 'notifications', 'login', 'register', 'verifyEmail'].includes(sectionId)) active = 'profile';
-  else if (sectionId === 'home' || !sectionId) active = 'home';
-  else active = '';
+  else if (sectionId === 'notifications' || (sectionId && String(sectionId).indexOf('notif') === 0)) active = 'notifications';
+  else if (['profile', 'myProfile', 'editAccount', 'login', 'register', 'verifyEmail'].includes(sectionId)) active = 'profile';
+
   bar.querySelectorAll('.bottom-nav-item').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-nav') === active);
   });
-  mostrarBarraInferior();
+  // Indicador deslizante
+  try { moverIndicadorBottomNav(active); } catch (e) {}
+}
+
+function moverIndicadorBottomNav(active) {
+  const ind = document.getElementById('bottomNavIndicator');
+  const bar = document.getElementById('bottomNav');
+  if (!ind || !bar) return;
+  const btn = bar.querySelector('.bottom-nav-item[data-nav="' + active + '"]');
+  if (!btn) {
+    ind.style.opacity = '0';
+    return;
+  }
+  const inner = bar.querySelector('.bottom-nav-inner') || bar;
+  const br = inner.getBoundingClientRect();
+  const r = btn.getBoundingClientRect();
+  const left = r.left - br.left + (r.width - ind.offsetWidth) / 2;
+  ind.style.opacity = '1';
+  ind.style.transform = 'translateX(' + Math.max(0, left) + 'px)';
 }
 
 function navBottom(destino) {
-  mostrarBarraInferior();
+  try { mostrarBarraInferior(); } catch (e) {}
   if (destino === 'home') {
     showSection('home');
     return;
   }
   if (destino === 'search') {
     showSection('search');
+    return;
+  }
+  if (destino === 'notifications') {
+    const user = getCurrentUser();
+    if (!user) {
+      showSection('login');
+      showToast('Iniciá sesión para ver notificaciones', 'error');
+      return;
+    }
+    if (user.tipo !== 'oficio') {
+      showToast('Las notificaciones son para profesionales', 'error');
+      return;
+    }
+    showNotifications();
     return;
   }
   if (destino === 'profile') {
@@ -3187,7 +3246,10 @@ function navBottom(destino) {
     if (user.tipo === 'oficio') {
       showMyProfile(false);
     } else {
-      abrirEditarPerfil();
+      // clientes: editar cuenta o buscar
+      const edit = document.getElementById('editAccount');
+      if (edit) showSection('editAccount');
+      else showSection('search');
     }
   }
 }
