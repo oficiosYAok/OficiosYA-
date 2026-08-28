@@ -674,6 +674,48 @@ function cargarLocalidades(provinciaSelectId, localidadSelectId, selectedLocalid
 // ===== FOTO DE PERFIL (registro / edición) =====
 let oficioFotoPerfilDataUrl = null;
 
+let clienteFotoPerfilDataUrl = null;
+let accFotoPerfilDataUrl = null;
+
+function previewFotoClienteRegistro(e) {
+  const file = e.target.files && e.target.files[0];
+  const preview = document.getElementById('clienteFotoPreview');
+  if (!file || !preview) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('La imagen debe ser menor a 5 MB', 'error');
+    e.target.value = '';
+    return;
+  }
+  const r = new FileReader();
+  r.onload = (ev) => {
+    clienteFotoPerfilDataUrl = ev.target.result;
+    preview.innerHTML = `<img src="${clienteFotoPerfilDataUrl}" alt="Vista previa">`;
+  };
+  r.readAsDataURL(file);
+}
+
+function previewFotoClienteCuenta(e) {
+  const file = e.target.files && e.target.files[0];
+  const preview = document.getElementById('accFotoPreview');
+  if (!file || !preview) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('La imagen debe ser menor a 5 MB', 'error');
+    e.target.value = '';
+    return;
+  }
+  const r = new FileReader();
+  r.onload = (ev) => {
+    accFotoPerfilDataUrl = ev.target.result;
+    preview.innerHTML = `<img src="${accFotoPerfilDataUrl}" alt="Vista previa">`;
+  };
+  r.readAsDataURL(file);
+}
+
+window.previewFotoClienteRegistro = previewFotoClienteRegistro;
+window.previewFotoClienteCuenta = previewFotoClienteCuenta;
+
+
+
 function previewFotoRegistro(e) {
   const file = e.target.files && e.target.files[0];
   const preview = document.getElementById('oficioFotoPreview');
@@ -1105,8 +1147,27 @@ function abrirEditarPerfil() {
   document.getElementById('accTelefono').value = user.telefono || '';
   const av = document.getElementById('clientProfileAvatar');
   const title = document.getElementById('clientProfileTitle');
-  if (av) av.textContent = getUserIniciales(user.nombre);
+  if (av) {
+    if (user.fotoPerfil) {
+      av.innerHTML = `<img src="${user.fotoPerfil}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+      av.textContent = getUserIniciales(user.nombre);
+    }
+  }
   if (title) title.textContent = user.nombre || 'Mi cuenta';
+
+  // Preview foto en formulario
+  accFotoPerfilDataUrl = null;
+  const accPrev = document.getElementById('accFotoPreview');
+  const accInput = document.getElementById('accFotoPerfil');
+  if (accInput) accInput.value = '';
+  if (accPrev) {
+    if (user.fotoPerfil) {
+      accPrev.innerHTML = `<img src="${user.fotoPerfil}" alt="Foto de perfil">`;
+    } else {
+      accPrev.innerHTML = '<i class="fas fa-user-circle"></i><span>Sin foto</span>';
+    }
+  }
 
   const provSel = document.getElementById('accProvincia');
   if (provSel && provSel.options.length <= 1) {
@@ -1141,6 +1202,31 @@ async function guardarCuenta(e) {
       data.provincia = document.getElementById('accProvincia').value;
       data.localidad = document.getElementById('accLocalidad').value;
     }
+
+    // Nueva foto de perfil (opcional)
+    if (user.tipo === 'cliente') {
+      try {
+        let dataUrl = accFotoPerfilDataUrl;
+        const accInput = document.getElementById('accFotoPerfil');
+        if (!dataUrl && accInput && accInput.files && accInput.files[0]) {
+          dataUrl = await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result);
+            r.onerror = reject;
+            r.readAsDataURL(accInput.files[0]);
+          });
+        }
+        if (dataUrl) {
+          showToast('Subiendo foto...');
+          data.fotoPerfil = await uploadImage(`users/${user.id}/perfil.jpg`, dataUrl);
+          accFotoPerfilDataUrl = null;
+        }
+      } catch (fotoErr) {
+        console.warn(fotoErr);
+        showToast('El perfil se guardó pero la foto no se pudo subir', 'error');
+      }
+    }
+
     await db.collection('users').doc(user.id).update(data);
     currentUserCache = { ...user, ...data };
     updateNav();
@@ -1255,7 +1341,29 @@ async function registrarCliente(e) {
       createdAt: new Date().toISOString()
     };
 
+    // Foto de perfil opcional
+    let fotoPerfilUrl = '';
+    try {
+      let dataUrl = clienteFotoPerfilDataUrl;
+      const fotoInput = document.getElementById('clienteFotoPerfil');
+      if (!dataUrl && fotoInput && fotoInput.files && fotoInput.files[0]) {
+        dataUrl = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(fotoInput.files[0]);
+        });
+      }
+      if (dataUrl) {
+        fotoPerfilUrl = await uploadImage(`users/${uid}/perfil.jpg`, dataUrl);
+        perfil.fotoPerfil = fotoPerfilUrl;
+      }
+    } catch (fotoErr) {
+      console.warn('Foto cliente opcional no subida:', fotoErr);
+    }
+
     await db.collection('users').doc(uid).set(perfil);
+    clienteFotoPerfilDataUrl = null;
 
     try {
       await enviarEmailVerificacion(cred.user);
@@ -1556,6 +1664,79 @@ async function procesarLinkVerificacionEmail() {
 
 
 // ===== LOGIN / LOGOUT =====
+
+// ===== RECUPERAR CONTRASEÑA =====
+function mostrarRecuperarContrasena() {
+  const form = document.getElementById('loginForm');
+  const box = document.getElementById('resetPassBox');
+  if (form) form.style.display = 'none';
+  if (box) box.style.display = 'block';
+  const loginEmail = document.getElementById('loginEmail');
+  const resetEmail = document.getElementById('resetEmail');
+  if (loginEmail && resetEmail && loginEmail.value) {
+    resetEmail.value = loginEmail.value.trim();
+  }
+  if (resetEmail) setTimeout(() => resetEmail.focus(), 100);
+}
+
+function ocultarRecuperarContrasena() {
+  const form = document.getElementById('loginForm');
+  const box = document.getElementById('resetPassBox');
+  if (box) box.style.display = 'none';
+  if (form) form.style.display = '';
+}
+
+async function enviarRecuperarContrasena() {
+  try {
+    if (!firebaseReady) {
+      showToast('Firebase no está configurado', 'error');
+      return;
+    }
+    const emailEl = document.getElementById('resetEmail');
+    const email = (emailEl && emailEl.value || '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      showToast('Ingresá un email válido', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btnResetPass');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+    }
+
+    await auth.sendPasswordResetEmail(email);
+    showToast('Te enviamos un correo para restablecer la contraseña. Revisá bandeja de entrada y spam.');
+    ocultarRecuperarContrasena();
+    const loginEmail = document.getElementById('loginEmail');
+    if (loginEmail) loginEmail.value = email;
+  } catch (err) {
+    console.error('reset password', err);
+    const code = err && err.code ? err.code : '';
+    if (code === 'auth/user-not-found') {
+      // Por privacidad, mensaje genérico similar al éxito
+      showToast('Si el email está registrado, recibirás un correo de recuperación.');
+      ocultarRecuperarContrasena();
+    } else if (code === 'auth/invalid-email') {
+      showToast('Email inválido', 'error');
+    } else if (code === 'auth/too-many-requests') {
+      showToast('Demasiados intentos. Probá más tarde.', 'error');
+    } else {
+      showToast((err && err.message) || 'No se pudo enviar el correo', 'error');
+    }
+  } finally {
+    const btn = document.getElementById('btnResetPass');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = 'Enviar enlace de recuperación';
+    }
+  }
+}
+
+window.mostrarRecuperarContrasena = mostrarRecuperarContrasena;
+window.ocultarRecuperarContrasena = ocultarRecuperarContrasena;
+window.enviarRecuperarContrasena = enviarRecuperarContrasena;
+
 async function iniciarSesion(e) {
   if (e) {
     e.preventDefault();
@@ -3059,7 +3240,7 @@ function appendSupportMsg(text, type) {
 function respuestaSoporte(mensaje) {
   const m = mensaje.toLowerCase();
   if (m.includes('sesión') || m.includes('login') || m.includes('ingresar') || m.includes('contraseña')) {
-    return 'Para iniciar sesión usá el menú <strong>Iniciar Sesión</strong> con el email y contraseña con los que te registraste. Si olvidaste la clave, por ahora tenés que registrarte de nuevo (demo sin recuperación de contraseña).';
+    return 'Para iniciar sesión usá el menú <strong>Iniciar Sesión</strong> con el email y contraseña con los que te registraste. Si olvidaste la clave, en Iniciar sesión tocá <strong>¿Olvidaste tu contraseña?</strong> y te enviamos un email para crear una nueva.';
   }
   if (m.includes('presupuesto') || m.includes('cotiz')) {
     return 'Para pedir un presupuesto: 1) Iniciá sesión como <strong>cliente</strong>. 2) Buscá un profesional. 3) Entrá a su perfil y tocá <strong>Solicitar presupuesto</strong>. Podés adjuntar fotos y describir el problema.';
