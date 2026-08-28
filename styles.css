@@ -2706,32 +2706,18 @@ img {
 }
 
 /* ===== BARRA INFERIOR FLOTANTE (liquid glass) ===== */
+
+/* ===== BOTTOM NAV: cápsula líquida + campana ===== */
 .bottom-nav {
   display: none;
   position: fixed;
   left: 50%;
-  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%) translateY(120%);
-  z-index: 2200;
-  width: auto;
-  max-width: calc(100% - 2rem);
-  padding: 0.4rem;
-  gap: 0.2rem;
-  grid-template-columns: repeat(3, auto);
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(28, 28, 30, 0.72);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.35),
-    0 2px 8px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
   opacity: 0;
+  z-index: 2500;
   pointer-events: none;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
 }
 
 .bottom-nav.visible {
@@ -2740,27 +2726,67 @@ img {
   pointer-events: auto;
 }
 
+.bottom-nav-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.15rem;
+  padding: 0.4rem 0.45rem;
+  min-width: min(92vw, 360px);
+  background: rgba(28, 28, 30, 0.72);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: bottomNavFloat 4.5s ease-in-out infinite;
+}
+
+@keyframes bottomNavFloat {
+  0%, 100% { box-shadow: 0 10px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12); }
+  50% { box-shadow: 0 14px 48px rgba(232, 93, 4, 0.18), inset 0 1px 0 rgba(255,255,255,0.16); }
+}
+
 .bottom-nav-item {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 52px;
   border: none;
   background: transparent;
-  font-family: inherit;
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
+  border-radius: 999px;
+  padding: 0.35rem 0.2rem;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.25s ease, transform 0.2s ease;
+}
+
+.bottom-nav-item .bn-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 44px;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.55);
+  width: 28px;
+  height: 28px;
   font-size: 1.15rem;
-  transition: background 0.25s ease, color 0.25s ease, transform 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.bottom-nav-item i {
-  font-size: 1.15rem;
-  line-height: 1;
+.bottom-nav-item .bn-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
 }
 
 .bottom-nav-item:active {
@@ -2769,20 +2795,81 @@ img {
 
 .bottom-nav-item.active {
   color: #fff;
-  background: rgba(255, 255, 255, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-.bottom-nav-item.active i {
+.bottom-nav-item.active .bn-icon {
+  transform: translateY(-2px) scale(1.12);
+  color: #ff9f1c;
+}
+
+.bottom-nav-item.active .bn-label {
   color: #fff;
+  opacity: 1;
+}
+
+/* Indicador deslizante */
+.bottom-nav-indicator {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 159, 28, 0.45), rgba(232, 93, 4, 0.2) 55%, transparent 70%);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Badge campana */
+.bn-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e85d04;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(28, 28, 30, 0.9);
+  line-height: 1;
+}
+
+.bn-badge-pulse {
+  animation: bnBadgePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes bnBadgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+.bn-notif.has-unread .bn-icon i {
+  animation: bnBellRing 0.9s ease-in-out 2;
+  transform-origin: top center;
+}
+
+@keyframes bnBellRing {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-6deg); }
+  75% { transform: rotate(3deg); }
 }
 
 @media (max-width: 768px) {
   .bottom-nav {
-    display: grid !important;
+    display: block !important;
   }
 
-  /* Visible por defecto y al tocar (clase .visible) */
   .bottom-nav.visible {
     transform: translateX(-50%) translateY(0) !important;
     opacity: 1 !important;
